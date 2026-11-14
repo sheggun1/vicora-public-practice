@@ -15,7 +15,7 @@
  */
 
 const VP = Object.freeze({
-  VERSION: '1.1.0',
+  VERSION: '1.2.0',
   DB_PROP: 'VICORA_PRACTICE_DATABASE_ID',
   ADMIN_PROP: 'VICORA_PRACTICE_ADMIN_KEY',
   SESSION_MS: 30 * 24 * 60 * 60 * 1000,
@@ -25,7 +25,7 @@ const VP = Object.freeze({
     PracticeUsers: ['user_id','full_name','email','password_salt','password_hash','active','created_at','last_login','school_level','class_level'],
     PracticeSessions: ['session_id','token_hash','user_id','expires_at','created_at','revoked'],
     PracticeQuestions: ['question_id','exam_type','school_level','class_level','subject','year','topic','difficulty','question_text','image_url','option_a','option_b','option_c','option_d','correct_option','explanation','marks','active','created_at','updated_at'],
-    PracticeAttempts: ['attempt_id','user_id','exam_type','school_level','class_level','subject','exam_mode','proctor_enabled','proctor_events_json','question_ids_json','question_count','started_at','submitted_at','score','total','status'],
+    PracticeAttempts: ['attempt_id','user_id','exam_type','school_level','class_level','subject','exam_mode','proctor_enabled','proctor_events_json','question_ids_json','question_count','started_at','duration_minutes','deadline_at','submitted_at','score','total','status'],
     PracticeAnswers: ['answer_id','attempt_id','question_id','selected_option']
   }
 });
@@ -200,10 +200,24 @@ function auth_(b) {
 
 function me_(b) {
   const u = auth_(b);
-  const ownAttempts = read_('PracticeAttempts').filter(a => a.user_id === u.user_id);
-  const activeExam = ownAttempts.some(a => a.status === 'in_progress');
+  let ownAttempts = read_('PracticeAttempts').filter(a => a.user_id === u.user_id);
+  ownAttempts.filter(a => a.status === 'in_progress' && attemptDeadline_(a) <= Date.now()).forEach(a => {
+    submit_({sessionToken:b.sessionToken, attemptId:a.attempt_id, answers:{}, proctorEvents:[]});
+  });
+  ownAttempts = read_('PracticeAttempts').filter(a => a.user_id === u.user_id);
+  const active = ownAttempts.find(a => a.status === 'in_progress') || null;
   const canUseTutor = ownAttempts.some(a => a.status === 'submitted');
-  return {user:{userId:u.user_id, fullName:u.full_name, email:u.email, schoolLevel:u.school_level || 'SENIOR_SECONDARY', classLevel:u.class_level || 'SS 1'}, activeExam:activeExam, canUseTutor:canUseTutor};
+  return {
+    user:{userId:u.user_id, fullName:u.full_name, email:u.email, schoolLevel:u.school_level || 'SENIOR_SECONDARY', classLevel:u.class_level || 'SS 1'},
+    activeExam:active ? {attemptId:active.attempt_id, deadlineAt:new Date(attemptDeadline_(active)).toISOString(), durationMinutes:Number(active.duration_minutes)||60} : null,
+    canUseTutor:canUseTutor
+  };
+}
+function attemptDeadline_(attempt) {
+  const explicit = Date.parse(attempt.deadline_at || '');
+  if (Number.isFinite(explicit)) return explicit;
+  const started = Date.parse(attempt.started_at || '');
+  return (Number.isFinite(started) ? started : Date.now()) + (Math.max(1,Number(attempt.duration_minutes)||60) * 60000);
 }
 
 function logout_(b) {
@@ -244,6 +258,12 @@ function start_(b) {
   const proctorEnabled = examMode === 'proctored' && b.proctorEnabled !== false;
   const subject = required_(b.subject, 'Subject', 100);
   const count = Math.max(5, Math.min(60, Number(b.questionCount) || 20));
+  const durationMinutes = Number(b.durationMinutes);
+  if (!Number.isFinite(durationMinutes) || durationMinutes < 1 || durationMinutes > 300) throw new Error('Select an examination duration between 1 and 300 minutes.');
+  read_('PracticeAttempts').filter(a => a.user_id === user.user_id && a.status === 'in_progress' && attemptDeadline_(a) <= Date.now()).forEach(a => {
+    submit_({sessionToken:b.sessionToken, attemptId:a.attempt_id, answers:{}, proctorEvents:[]});
+  });
+  if (read_('PracticeAttempts').some(a => a.user_id === user.user_id && a.status === 'in_progress')) throw new Error('You already have an examination in progress. Resume or submit it before starting another.');
   if (VP.TYPES.indexOf(type) < 0) throw new Error('Choose a valid examination type.');
   const available = read_('PracticeQuestions').filter(q => q.active === 'true' && q.exam_type === type && q.subject === subject && (q.school_level || 'SENIOR_SECONDARY') === schoolLevel && (!q.class_level || q.class_level === classLevel));
   if (!available.length) throw new Error('There are no questions for this selection yet.');
@@ -256,13 +276,15 @@ function start_(b) {
   const ids = chosen.map(q => q.question_id);
   const attemptId = Utilities.getUuid();
   const now = new Date().toISOString();
+  const deadlineAt = new Date(Date.now() + durationMinutes * 60000).toISOString();
   append_('PracticeAttempts', {
     attempt_id:attemptId, user_id:user.user_id, exam_type:type, school_level:schoolLevel, class_level:classLevel, subject:subject,
     exam_mode:examMode, proctor_enabled:String(proctorEnabled), proctor_events_json:'[]',
     question_ids_json:JSON.stringify(ids), question_count:ids.length,
-    started_at:now, submitted_at:'', score:'', total:'', status:'in_progress'
+    started_at:now, duration_minutes:String(durationMinutes), deadline_at:deadlineAt,
+    submitted_at:'', score:'', total:'', status:'in_progress'
   });
-  return {attemptId:attemptId, examType:type, schoolLevel:schoolLevel, classLevel:classLevel, examMode:examMode, proctorEnabled:proctorEnabled, subject:subject, questionCount:ids.length, questions:chosen.map(q => safeQuestion_(q, false, ''))};
+  return {attemptId:attemptId, examType:type, schoolLevel:schoolLevel, classLevel:classLevel, examMode:examMode, proctorEnabled:proctorEnabled, subject:subject, questionCount:ids.length, durationMinutes:durationMinutes, deadlineAt:deadlineAt, questions:chosen.map(q => safeQuestion_(q, false, ''))};
 }
 
 function safeQuestion_(q, includeAnswer, selected) {
@@ -289,11 +311,12 @@ function submit_(b) {
     const attempt = findOne_('PracticeAttempts', 'attempt_id', id);
     if (!attempt || attempt.user_id !== user.user_id) throw new Error('Practice attempt not found.');
     if (attempt.status !== 'in_progress') throw new Error('This practice attempt has already been submitted.');
+    const timeExpired = Date.now() >= attemptDeadline_(attempt);
     const ids = JSON.parse(attempt.question_ids_json);
     const questions = read_('PracticeQuestions');
     const byId = {};
     questions.forEach(q => { byId[q.question_id] = q; });
-    const answers = b.answers && typeof b.answers === 'object' ? b.answers : {};
+    const answers = !timeExpired && b.answers && typeof b.answers === 'object' ? b.answers : {};
     let score = 0, total = 0, correctCount = 0;
     const answerRows = [];
     ids.forEach(function(qid) {
@@ -320,7 +343,7 @@ function submit_(b) {
       return q ? safeQuestion_(q, true, ['A','B','C','D'].indexOf(selected) >= 0 ? selected : '') : null;
     }).filter(Boolean);
     return {
-      attemptId:id, examType:attempt.exam_type, subject:attempt.subject,
+      attemptId:id, examType:attempt.exam_type, subject:attempt.subject, timeExpired:timeExpired,
       score:score, total:total, percentage:total ? Math.round(score / total * 1000) / 10 : 0,
       correctCount:correctCount, questionCount:ids.length, review:review
     };
