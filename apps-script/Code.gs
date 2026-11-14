@@ -15,7 +15,7 @@
  */
 
 const VP = Object.freeze({
-  VERSION: '1.2.0',
+  VERSION: '1.3.0',
   DB_PROP: 'VICORA_PRACTICE_DATABASE_ID',
   ADMIN_PROP: 'VICORA_PRACTICE_ADMIN_KEY',
   SESSION_MS: 365 * 24 * 60 * 60 * 1000,
@@ -26,7 +26,10 @@ const VP = Object.freeze({
     PracticeSessions: ['session_id','token_hash','user_id','expires_at','created_at','revoked'],
     PracticeQuestions: ['question_id','exam_type','school_level','class_level','subject','year','topic','difficulty','question_text','image_url','option_a','option_b','option_c','option_d','correct_option','explanation','marks','active','created_at','updated_at'],
     PracticeAttempts: ['attempt_id','user_id','exam_type','school_level','class_level','subject','exam_mode','proctor_enabled','proctor_events_json','question_ids_json','question_count','started_at','duration_minutes','deadline_at','submitted_at','score','total','status'],
-    PracticeAnswers: ['answer_id','attempt_id','question_id','selected_option']
+    PracticeAnswers: ['answer_id','attempt_id','question_id','selected_option'],
+    PracticeAdmins: ['admin_id','username','password_salt','password_hash','active','created_at','last_login'],
+    PracticeAdminSessions: ['session_id','token_hash','admin_id','expires_at','created_at','revoked'],
+    PracticePasswordResets: ['reset_id','user_id','token_hash','expires_at','used','created_at']
   }
 });
 
@@ -112,6 +115,10 @@ function doPost(e) {
     switch (action) {
       case 'practice.register': data = register_(body); break;
       case 'practice.login': data = login_(body); break;
+      case 'practice.admin.login': data = adminLogin_(body); break;
+      case 'practice.admin.changePassword': requireAdmin_(body); data = adminChangePassword_(body); break;
+      case 'practice.password.requestReset': data = requestPasswordReset_(body); break;
+      case 'practice.password.completeReset': data = completePasswordReset_(body); break;
       case 'practice.logout': data = logout_(body); break;
       case 'practice.me': data = me_(body); break;
       case 'practice.catalog': data = catalog_(); break;
@@ -437,12 +444,42 @@ function historyDetail_(b) {
 
 // ------------------------- Administrator actions -------------------------
 
-function requireAdmin_(b) {
-  const expected = PropertiesService.getScriptProperties().getProperty(VP.ADMIN_PROP) || '';
-  const supplied = String(b.adminKey || '');
-  if (expected.length < 40 || supplied.length < 40 || hash_(supplied) !== hash_(expected)) {
-    throw new Error('Not authorised. Check the VICORA Practice Administrator Key.');
-  }
+function requireAdmin_(b){
+ const token=String(b.adminToken||'');if(token.length<40||token.length>200)throw Error('Administrator session expired. Please sign in again.');
+ const s=findOne_('PracticeAdminSessions','token_hash',hash_(token));if(!s||s.revoked==='true'||Date.parse(s.expires_at)<=Date.now())throw Error('Administrator session expired. Please sign in again.');
+ const a=findOne_('PracticeAdmins','admin_id',s.admin_id);if(!a||a.active!=='true')throw Error('Administrator account is inactive.');return a;
+}
+function adminLogin_(b){
+ const username=required_(b.username,'Username',80).toLowerCase(),password=String(b.password||''),a=findOne_('PracticeAdmins','username',username);
+ if(!a||a.active!=='true'||a.password_hash!==hash_(String(a.password_salt)+password))throw Error('Username or password is incorrect.');
+ const token=randomToken_(),now=new Date().toISOString();append_('PracticeAdminSessions',{session_id:Utilities.getUuid(),token_hash:hash_(token),admin_id:a.admin_id,expires_at:new Date(Date.now()+VP.SESSION_MS).toISOString(),created_at:now,revoked:'false'});
+ updateById_('PracticeAdmins','admin_id',a.admin_id,{last_login:now});return {adminToken:token,username:a.username};
+}
+function adminChangePassword_(b){
+ const a=requireAdmin_(b),old=String(b.currentPassword||''),next=String(b.newPassword||'');
+ if(a.password_hash!==hash_(String(a.password_salt)+old))throw Error('Current password is incorrect.');
+ if(next.length<10||next.length>128)throw Error('New password must contain between 10 and 128 characters.');
+ const salt=randomToken_();updateById_('PracticeAdmins','admin_id',a.admin_id,{password_salt:salt,password_hash:hash_(salt+next)});
+ read_('PracticeAdminSessions').filter(x=>x.admin_id===a.admin_id&&x.revoked!=='true').forEach(x=>updateById_('PracticeAdminSessions','session_id',x.session_id,{revoked:'true'}));return {changed:true};
+}
+function requestPasswordReset_(b){
+ const email=validEmail_(b.email),u=findOne_('PracticeUsers','email',email);
+ if(u&&u.active==='true'){
+  const token=randomToken_(),now=new Date(),expires=new Date(now.getTime()+30*60*1000);
+  append_('PracticePasswordResets',{reset_id:Utilities.getUuid(),user_id:u.user_id,token_hash:hash_(token),expires_at:expires.toISOString(),used:'false',created_at:now.toISOString()});
+  const base=String(b.siteUrl||'').replace(/\/$/,'');if(!/^https:\/\/[a-z0-9.-]+$/i.test(base))throw Error('Password reset site address is invalid.');
+  MailApp.sendEmail({to:u.email,subject:'VICORA Practice password reset',body:'Hello '+u.full_name+',\n\nUse this link to reset your VICORA Practice password. It expires in 30 minutes and can only be used once:\n\n'+base+'/?reset='+encodeURIComponent(token)+'\n\nIf you did not request this, ignore this email.'});
+ }
+ return {message:'If the email belongs to an active account, a password reset link has been sent.'};
+}
+function completePasswordReset_(b){
+ const token=String(b.token||''),password=String(b.password||'');if(token.length<40||token.length>100)throw Error('This password reset link is invalid or expired.');
+ if(password.length<10||password.length>128)throw Error('Password must contain between 10 and 128 characters.');
+ const r=findOne_('PracticePasswordResets','token_hash',hash_(token));if(!r||r.used==='true'||Date.parse(r.expires_at)<=Date.now())throw Error('This password reset link is invalid or expired.');
+ const u=findOne_('PracticeUsers','user_id',r.user_id);if(!u||u.active!=='true')throw Error('This account is unavailable.');
+ const salt=randomToken_();updateById_('PracticeUsers','user_id',u.user_id,{password_salt:salt,password_hash:hash_(salt+password)});
+ updateById_('PracticePasswordResets','reset_id',r.reset_id,{used:'true'});
+ read_('PracticeSessions').filter(x=>x.user_id===u.user_id&&x.revoked!=='true').forEach(x=>updateById_('PracticeSessions','session_id',x.session_id,{revoked:'true'}));return {changed:true};
 }
 
 function listQuestions_() {
@@ -574,6 +611,14 @@ function aiErrorMessage_(data,res,provider){const err=data&&(data.error||data);c
 function normalLevel_(v){const x=String(v||'').toUpperCase().replace(/[ -]+/g,'_');if(VP.LEVELS.indexOf(x)<0)throw Error('Choose Primary, Junior Secondary or Senior Secondary.');return x;}
 function defaultClass_(l){return l==='PRIMARY'?'Primary 1':l==='JUNIOR_SECONDARY'?'JSS 1':'SS 1';}
 function normalClass_(l,v){const x=clean_(v,30),ok=l==='PRIMARY'?/^Primary [1-6]$/i.test(x):l==='JUNIOR_SECONDARY'?/^JSS [1-3]$/i.test(x):/^SS [1-3]$/i.test(x);if(!ok)throw Error('Choose a class that matches the selected school level.');return l==='PRIMARY'?x.replace(/^primary/i,'Primary'):x.toUpperCase();}
+
+function initializeVICORAAdminLogin(){
+ const id=PropertiesService.getScriptProperties().getProperty(VP.DB_PROP);if(!id)throw Error('Existing practice database was not found. Do not create a new database.');
+ const ss=SpreadsheetApp.openById(id),specs={PracticeAdmins:['admin_id','username','password_salt','password_hash','active','created_at','last_login'],PracticeAdminSessions:['session_id','token_hash','admin_id','expires_at','created_at','revoked'],PracticePasswordResets:['reset_id','user_id','token_hash','expires_at','used','created_at']};
+ Object.keys(specs).forEach(n=>{let sh=ss.getSheetByName(n);if(!sh)sh=ss.insertSheet(n);if(sh.getLastRow()===0){sh.getRange(1,1,1,specs[n].length).setValues([specs[n]]);sh.setFrozenRows(1);sh.getRange(1,1,1,specs[n].length).setFontWeight('bold');}});
+ const sh=ss.getSheetByName('PracticeAdmins');if(sh.getLastRow()===1)sh.appendRow(['VICORA-ADMIN-1','@sheggun2026','dd3621825a14ca6ad7db29a32c44cc9db34ed3ac1f19364f','651acf10de365d4f26342bf0862d5a4624707c6e170a0b83ae7d772561ffb913','true',new Date().toISOString(),'']);
+ return {ready:true,spreadsheetUrl:ss.getUrl(),adminUsername:sh.getRange(2,2).getValue(),message:'Admin login initialized. Edit PracticeAdmins column B to change username; change password in the dashboard.'};
+}
 
 // ------------------------------- Utilities --------------------------------
 
