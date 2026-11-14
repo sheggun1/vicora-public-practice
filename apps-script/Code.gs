@@ -523,33 +523,54 @@ function uploadQuestionImage_(b) {
   file.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
   return {imageUrl:'https://drive.google.com/uc?export=view&id='+file.getId()};
 }
-function aiSettings_(){const p=PropertiesService.getScriptProperties();return {geminiConfigured:!!p.getProperty('VICORA_GEMINI_API_KEY'),groqConfigured:!!p.getProperty('VICORA_GROQ_API_KEY'),preferredProvider:p.getProperty('VICORA_AI_PROVIDER')||'gemini',geminiModel:p.getProperty('VICORA_GEMINI_MODEL')||'gemini-3.5-flash-lite',groqModel:p.getProperty('VICORA_GROQ_MODEL')||'openai/gpt-oss-120b'};}
-function saveAiSettings_(b){const p=PropertiesService.getScriptProperties();if(b.geminiKey)p.setProperty('VICORA_GEMINI_API_KEY',String(b.geminiKey).trim());if(b.groqKey)p.setProperty('VICORA_GROQ_API_KEY',String(b.groqKey).trim());if(b.geminiModel!==undefined)p.setProperty('VICORA_GEMINI_MODEL',validModelId_(b.geminiModel,'Gemini'));if(b.groqModel!==undefined)p.setProperty('VICORA_GROQ_MODEL',validModelId_(b.groqModel,'Groq'));if(['gemini','groq','auto'].indexOf(String(b.preferredProvider))>=0)p.setProperty('VICORA_AI_PROVIDER',String(b.preferredProvider));return aiSettings_();}
-function validModelId_(value,label){const id=String(value||'').trim();if(!id||id.length>120||!/^[A-Za-z0-9._:/-]+$/.test(id))throw Error('Enter a valid '+label+' model ID (letters, numbers, dot, underscore, colon, slash or hyphen).');return id;}
+const AI_PROVIDERS_=['gemini','groq','openai','meta','claude','grok'];
+const AI_DEFAULT_MODELS_={gemini:'gemini-3.5-flash-lite',groq:'openai/gpt-oss-120b',openai:'gpt-4.1-mini',meta:'muse-spark-1.3',claude:'claude-sonnet-4-5',grok:'grok-4.7'};
+function aiSettings_(){const p=PropertiesService.getScriptProperties(),providers={};AI_PROVIDERS_.forEach(k=>{providers[k]={configured:!!p.getProperty('VICORA_'+k.toUpperCase()+'_API_KEY'),model:p.getProperty('VICORA_'+k.toUpperCase()+'_MODEL')||AI_DEFAULT_MODELS_[k]};});return {providers:providers,providerOrder:p.getProperty('VICORA_AI_PROVIDER_ORDER')||'gemini,groq,openai,meta,claude,grok'};}
+function saveAiSettings_(b){const p=PropertiesService.getScriptProperties();AI_PROVIDERS_.forEach(k=>{const prefix='VICORA_'+k.toUpperCase();const key=b[k+'Key'];if(key&&String(key).trim())p.setProperty(prefix+'_API_KEY',String(key).trim());if(b[k+'Model']!==undefined)p.setProperty(prefix+'_MODEL',validModelId_(b[k+'Model'],k+' model'));});if(b.providerOrder!==undefined){const order=String(b.providerOrder).toLowerCase().split(',').map(x=>x.trim()).filter(Boolean);if(order.length!==AI_PROVIDERS_.length||new Set(order).size!==AI_PROVIDERS_.length||order.some(x=>AI_PROVIDERS_.indexOf(x)<0))throw Error('Fallback order must contain each provider exactly once: gemini, groq, openai, meta, claude, grok.');p.setProperty('VICORA_AI_PROVIDER_ORDER',order.join(','));}return aiSettings_();}
+function validModelId_(value,label){const id=String(value||'').trim();if(!id||id.length>120||!/^[A-Za-z0-9._:/-]+$/.test(id))throw Error('Enter a valid '+label+' model ID.');return id;}
 function verifyQuestionWithAI_(b){const q=b.question||{};const prompt='Review this Nigerian curriculum question for the stated school level and class. Check factual accuracy, ambiguity, all options, proposed correct answer, explanation and image relevance. Do not assume supplied answer is correct. Return a concise structured report with verdict PASS/REVIEW/FAIL, answerCheck, issues, suggestedCorrection, explanationCheck and levelFit. Question: '+JSON.stringify(q);return callPracticeAI_(prompt,q.image_url||'',true);}
 function studentTutor_(b){const u=auth_(b);if(read_('PracticeAttempts').some(a=>a.user_id===u.user_id&&a.status==='in_progress'))throw Error('AI Study is locked while you have an active examination. Submit your examination before asking AI for help.');const messages=cleanChatMessages_(b.messages,b.question);if(!messages.length)throw Error('Enter a learning question.');const prompt='You are VICORA AI Study Tutor. Teach a student in '+(u.school_level||'SENIOR_SECONDARY')+', class '+(u.class_level||'SS 1')+'. Support Primary, Junior Secondary and Senior Secondary learning with age-appropriate, curriculum-aligned explanations. Teach step by step, use simple examples, check understanding, and never shame the learner. If asked to solve a problem, show the method and final answer. Keep answers clear and useful. The student is studying independently, not taking an active examination. Conversation:\\n'+formatChatMessages_(messages);return callPracticeAI_(prompt,String(b.image_url||''),false);}
 function adminAIChat_(b){const messages=cleanChatMessages_(b.messages,b.question);if(!messages.length)throw Error('Enter a message for VICORA Admin AI.');const prompt='You are VICORA Admin AI, an assistant for the authorised administrator of VICORA Public CBT Practice. Help with question-bank planning, Nigerian curriculum alignment, question generation, answer verification, explanations, test preparation, platform operations and interpreting any figures the administrator explicitly provides. Be precise, flag uncertainty, and never claim to have changed database records or settings. When generating questions, include school level, class, subject, topic, four options A-D, correct answer and explanation. Conversation:\\n'+formatChatMessages_(messages);return callPracticeAI_(prompt,'',true);}
 function cleanChatMessages_(raw,fallback){let list=Array.isArray(raw)?raw:[];list=list.slice(-12).map(m=>({role:m&&m.role==='assistant'?'assistant':'user',content:clean_(m&&m.content,3000)})).filter(m=>m.content);if(!list.length&&fallback)list=[{role:'user',content:clean_(fallback,3000)}];return list;}
 function formatChatMessages_(messages){return messages.map(m=>(m.role==='assistant'?'VICORA AI':'User')+': '+m.content).join('\\n');}
 function callPracticeAI_(prompt,imageUrl,isAdmin){
- const p=PropertiesService.getScriptProperties(),pref=p.getProperty('VICORA_AI_PROVIDER')||'gemini',providers=pref==='auto'?['gemini','groq']:[pref,pref==='gemini'?'groq':'gemini'];let last='No AI provider is configured.';
- for(const provider of providers){try{
-  if(provider==='gemini'&&p.getProperty('VICORA_GEMINI_API_KEY')){
-   const parts=[{text:prompt}];
-   if(imageUrl){const fid=(String(imageUrl).match(/[?&]id=([^&]+)/)||[])[1];if(fid){const blob=DriveApp.getFileById(fid).getBlob();parts.push({inlineData:{mimeType:blob.getContentType(),data:Utilities.base64Encode(blob.getBytes())}});}else parts.push({text:'Image URL: '+imageUrl});}
-   const geminiModel=p.getProperty('VICORA_GEMINI_MODEL')||'gemini-3.5-flash-lite';
-   const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(geminiModel)+':generateContent?key='+encodeURIComponent(p.getProperty('VICORA_GEMINI_API_KEY'));
-   const r=UrlFetchApp.fetch(url,{method:'post',contentType:'application/json',payload:JSON.stringify({contents:[{parts:parts}],generationConfig:{temperature:0.2,maxOutputTokens:1200}}),muteHttpExceptions:true}),j=JSON.parse(r.getContentText());
-   if(r.getResponseCode()>=300)throw Error(j.error&&j.error.message||'Gemini request failed.');
-   const answer=j.candidates&&j.candidates[0]&&j.candidates[0].content.parts.map(x=>x.text||'').join('');if(!answer)throw Error('Gemini returned no answer.');return {provider:'gemini',answer:answer};
-  }
-  if(provider==='groq'&&p.getProperty('VICORA_GROQ_API_KEY')){
-   const r=UrlFetchApp.fetch('https://api.groq.com/openai/v1/chat/completions',{method:'post',contentType:'application/json',headers:{Authorization:'Bearer '+p.getProperty('VICORA_GROQ_API_KEY')},payload:JSON.stringify({model:p.getProperty('VICORA_GROQ_MODEL')||'openai/gpt-oss-120b',messages:[{role:'user',content:prompt}],temperature:0.2,max_tokens:1200}),muteHttpExceptions:true}),j=JSON.parse(r.getContentText());
-   if(r.getResponseCode()>=300)throw Error(j.error&&j.error.message||'Groq request failed.');const answer=j.choices&&j.choices[0]&&j.choices[0].message.content;if(!answer)throw Error('Groq returned no answer.');return {provider:'groq',answer:answer};
-  }
- }catch(e){last=safeError_(e);}}
- throw Error(last==='No AI provider is configured.'?'AI is not configured. Add Gemini or Groq API keys in VICORA AI settings.':last);
+ const p=PropertiesService.getScriptProperties(),order=(p.getProperty('VICORA_AI_PROVIDER_ORDER')||'gemini,groq,openai,meta,claude,grok').split(',').map(x=>x.trim()).filter(x=>AI_PROVIDERS_.indexOf(x)>=0);
+ let last='No AI provider is configured.',attempted=[];
+ for(const provider of order){
+  const prefix='VICORA_'+provider.toUpperCase(),key=p.getProperty(prefix+'_API_KEY');
+  if(!key)continue;
+  attempted.push(provider);
+  try{
+   let answer='';
+   if(provider==='gemini'){
+    const parts=[{text:prompt}];
+    if(imageUrl){const fid=(String(imageUrl).match(/[?&]id=([^&]+)/)||[])[1];if(fid){const blob=DriveApp.getFileById(fid).getBlob();parts.push({inlineData:{mimeType:blob.getContentType(),data:Utilities.base64Encode(blob.getBytes())}});}else parts.push({text:'Image URL: '+imageUrl});}
+    const model=p.getProperty(prefix+'_MODEL')||AI_DEFAULT_MODELS_.gemini;
+    const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent?key='+encodeURIComponent(key);
+    const res=UrlFetchApp.fetch(url,{method:'post',contentType:'application/json',payload:JSON.stringify({contents:[{parts:parts}],generationConfig:{temperature:0.2,maxOutputTokens:1200}}),muteHttpExceptions:true});
+    const data=parseAIJson_(res,provider);if(res.getResponseCode()>=300)throw Error(aiErrorMessage_(data,res,provider));
+    answer=(data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts||[]).map(x=>x.text||'').join('');
+   }else if(provider==='claude'){
+    const model=p.getProperty(prefix+'_MODEL')||AI_DEFAULT_MODELS_.claude;
+    const res=UrlFetchApp.fetch('https://api.anthropic.com/v1/messages',{method:'post',contentType:'application/json',headers:{'x-api-key':key,'anthropic-version':'2023-06-01'},payload:JSON.stringify({model:model,max_tokens:1200,messages:[{role:'user',content:prompt}]}),muteHttpExceptions:true});
+    const data=parseAIJson_(res,provider);if(res.getResponseCode()>=300)throw Error(aiErrorMessage_(data,res,provider));
+    answer=(data.content||[]).map(x=>x.text||'').join('');
+   }else{
+    const base=provider==='groq'?'https://api.groq.com/openai/v1':provider==='openai'?'https://api.openai.com/v1':provider==='meta'?'https://api.meta.ai/v1':'https://api.x.ai/v1';
+    const model=p.getProperty(prefix+'_MODEL')||AI_DEFAULT_MODELS_[provider];
+    const res=UrlFetchApp.fetch(base+'/chat/completions',{method:'post',contentType:'application/json',headers:{Authorization:'Bearer '+key},payload:JSON.stringify({model:model,messages:[{role:'user',content:prompt}],temperature:0.2,max_tokens:1200}),muteHttpExceptions:true});
+    const data=parseAIJson_(res,provider);if(res.getResponseCode()>=300)throw Error(aiErrorMessage_(data,res,provider));
+    answer=data.choices&&data.choices[0]&&data.choices[0].message&&data.choices[0].message.content;
+   }
+   if(!answer)throw Error(provider+' returned an empty answer.');
+   return {provider:provider,answer:String(answer)};
+  }catch(e){last=provider+': '+safeError_(e);}
+ }
+ if(!attempted.length)throw Error('No AI provider is configured. Add at least one provider API key in VICORA Admin → AI model settings.');
+ throw Error('All configured AI providers failed. '+last+' VICORA tried: '+attempted.join(' → ')+'. Check API keys, model IDs, quotas and provider availability.');
 }
+function parseAIJson_(res,provider){try{return JSON.parse(res.getContentText());}catch(e){throw Error(provider+' returned an invalid response (HTTP '+res.getResponseCode()+').');}}
+function aiErrorMessage_(data,res,provider){const err=data&&(data.error||data);const msg=err&&(err.message||err.type)||'request failed';return provider+' API error HTTP '+res.getResponseCode()+': '+String(msg).slice(0,260);}
 function normalLevel_(v){const x=String(v||'').toUpperCase().replace(/[ -]+/g,'_');if(VP.LEVELS.indexOf(x)<0)throw Error('Choose Primary, Junior Secondary or Senior Secondary.');return x;}
 function defaultClass_(l){return l==='PRIMARY'?'Primary 1':l==='JUNIOR_SECONDARY'?'JSS 1':'SS 1';}
 function normalClass_(l,v){const x=clean_(v,30),ok=l==='PRIMARY'?/^Primary [1-6]$/i.test(x):l==='JUNIOR_SECONDARY'?/^JSS [1-3]$/i.test(x):/^SS [1-3]$/i.test(x);if(!ok)throw Error('Choose a class that matches the selected school level.');return l==='PRIMARY'?x.replace(/^primary/i,'Primary'):x.toUpperCase();}
