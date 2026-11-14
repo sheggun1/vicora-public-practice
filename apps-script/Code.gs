@@ -96,11 +96,14 @@ function setupVICORAPublicPractice() {
 }
 
 function doGet(e) {
-  const action = String((e && e.parameter && e.parameter.action) || 'health');
-  if (action === 'health') {
-    return json_({ok:true, service:'VICORA Public Practice API', version:VP.VERSION, timestamp:new Date().toISOString()});
+  // The deployed Apps Script URL serves the complete student/admin web app.
+  // Optional health check: append ?api=health
+  if (e && e.parameter && e.parameter.api === 'health') {
+    return json_({ok:true, service:'VICORA Public Practice', version:VP.VERSION, timestamp:new Date().toISOString()});
   }
-  return json_({ok:false, error:'Unsupported GET action.'});
+  return HtmlService.createHtmlOutputFromFile('Index')
+    .setTitle('VICORA Public Practice')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 function doPost(e) {
@@ -497,4 +500,29 @@ function safeError_(err) {
 
 function json_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+
+// ----------------------- Apps Script web-app interface --------------------
+// These public wrappers are called by Index.html through google.script.run.
+// The underlying validation and database logic remains in the functions above.
+
+function uiRegister(payload) { return register_(payload || {}); }
+function uiLogin(payload) { return login_(payload || {}); }
+function uiLogout(payload) { return logout_(payload || {}); }
+function uiMe(payload) { return me_(payload || {}); }
+function uiCatalog() { return catalog_(); }
+function uiHistory(payload) { return history_(payload || {}); }
+function uiStart(payload) { return start_(payload || {}); }
+function uiSubmit(payload) { return submit_(payload || {}); }
+
+function uiAdminListQuestions(payload) {
+  requireAdmin_(payload || {});
+  return listQuestions_();
+}
+
+function uiAdminImportQuestions(payload) {
+  payload = payload || {};
+  requireAdmin_(payload);
+  return importQuestions_(payload);
 }
