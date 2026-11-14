@@ -223,11 +223,26 @@ function attemptDeadline_(attempt) {
 
 function logout_(b) {
   const token = String(b.sessionToken || '');
+  let submittedAttempt = null;
   if (token) {
-    const s = findOne_('PracticeSessions', 'token_hash', hash_(token));
-    if (s) updateById_('PracticeSessions', 'session_id', s.session_id, {revoked:'true'});
+    const user = auth_(b);
+    const active = read_('PracticeAttempts').find(a => a.user_id === user.user_id && a.status === 'in_progress');
+    if (active) {
+      submittedAttempt = submit_({
+        sessionToken:token,
+        attemptId:active.attempt_id,
+        answers:b.answers && typeof b.answers === 'object' ? b.answers : {},
+        proctorEvents:Array.isArray(b.proctorEvents) ? b.proctorEvents : []
+      });
+    }
+    const session = findOne_('PracticeSessions', 'token_hash', hash_(token));
+    if (session) updateById_('PracticeSessions', 'session_id', session.session_id, {revoked:'true'});
   }
-  return {loggedOut:true};
+  return {loggedOut:true, autoSubmitted:!!submittedAttempt, result:submittedAttempt ? {
+    attemptId:submittedAttempt.attemptId, percentage:submittedAttempt.percentage,
+    score:submittedAttempt.score, total:submittedAttempt.total,
+    timeExpired:submittedAttempt.timeExpired
+  } : null};
 }
 
 // ---------------------------- Question bank -------------------------------
