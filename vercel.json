@@ -51,5 +51,6 @@
       "source": "/practice/register.html",
       "destination": "/index.html"
     }
-  ]
+  ],
+  "outputDirectory": "public"
 }
