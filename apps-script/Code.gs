@@ -587,6 +587,7 @@ function importQuestions_(b) {
     const sh = sheet_('PracticeQuestions');
     const headers = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(String);
     const inserts = [];
+    const pendingByKey = {};
     let saved = 0;
     list.forEach(function(q) {
       const type = String(q.exam_type || '').toUpperCase();
@@ -609,10 +610,15 @@ function importQuestions_(b) {
         active:'true', updated_at:now
       };
       if (existing) {
-        updateById_('PracticeQuestions','question_id',existing.question_id,values);
+        if (pendingByKey[key] !== undefined) {
+          inserts[pendingByKey[key]] = headers.map(h => Object.prototype.hasOwnProperty.call(values,h) ? values[h] : (h === 'question_id' ? existing.question_id : ''));
+        } else {
+          updateById_('PracticeQuestions','question_id',existing.question_id,values);
+        }
       } else {
         values.question_id = Utilities.getUuid();
         values.created_at = now;
+        pendingByKey[key] = inserts.length;
         inserts.push(headers.map(h => Object.prototype.hasOwnProperty.call(values,h) ? values[h] : ''));
         const newRow = Object.assign({question_id:values.question_id},values);
         byKey[key] = newRow;
