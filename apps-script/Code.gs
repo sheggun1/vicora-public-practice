@@ -200,7 +200,8 @@ function auth_(b) {
 
 function me_(b) {
   const u = auth_(b);
-  return {user:{userId:u.user_id, fullName:u.full_name, email:u.email, schoolLevel:u.school_level || 'SENIOR_SECONDARY', classLevel:u.class_level || 'SS 1'}};
+  const activeExam = read_('PracticeAttempts').some(a => a.user_id === u.user_id && a.status === 'in_progress');
+  return {user:{userId:u.user_id, fullName:u.full_name, email:u.email, schoolLevel:u.school_level || 'SENIOR_SECONDARY', classLevel:u.class_level || 'SS 1'}, activeExam:activeExam};
 }
 
 function logout_(b) {
@@ -363,7 +364,7 @@ function historyDetail_(b) {
       question_count:Number(a.question_count) || review.length
     },
     review:review.map(q => ({
-      id:q.id, year:q.year, topic:q.topic, question_text:q.questionText,
+      id:q.id, year:q.year, topic:q.topic, question_text:q.questionText, image_url:q.imageUrl || '',
       options:q.options, selected_option:q.selectedOption, correct_option:q.correctOption,
       correct:q.correct, explanation:q.explanation
     }))
@@ -409,7 +410,7 @@ function importQuestions_(b) {
       const options = ['a','b','c','d'].map(k => required_(q['option_' + k], 'Option ' + k.toUpperCase(), 1500));
       const all = read_('PracticeQuestions');
       const existing = (q.question_id ? findOne_('PracticeQuestions','question_id',String(q.question_id)) : null) ||
-        all.find(x => x.exam_type === type && x.subject === subject && x.question_text === questionText);
+        all.find(x => x.exam_type === type && x.subject === subject && (x.school_level || 'SENIOR_SECONDARY') === schoolLevel && (x.class_level || defaultClass_(schoolLevel)) === classLevel && x.question_text === questionText);
       const now = new Date().toISOString();
       const values = {
         exam_type:type, school_level:schoolLevel, class_level:classLevel, subject:subject, year:clean_(q.year || '',12),
