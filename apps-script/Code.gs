@@ -118,6 +118,7 @@ function doPost(e) {
       case 'practice.history': data = history_(body); break;
       case 'practice.history.detail': data = historyDetail_(body); break;
       case 'practice.start': data = start_(body); break;
+      case 'practice.resume': data = resume_(body); break;
       case 'practice.submit': data = submit_(body); break;
       case 'practice.admin.listQuestions': requireAdmin_(body); data = listQuestions_(); break;
       case 'practice.admin.importQuestions': requireAdmin_(body); data = importQuestions_(body); break;
@@ -214,6 +215,28 @@ function me_(b) {
     canUseTutor:canUseTutor
   };
 }
+function resume_(b) {
+  const user = auth_(b);
+  let attempt = read_('PracticeAttempts').find(a => a.user_id === user.user_id && a.status === 'in_progress');
+  if (!attempt) throw new Error('There is no examination to resume.');
+  if (attemptDeadline_(attempt) <= Date.now()) {
+    const result = submit_({sessionToken:b.sessionToken,attemptId:attempt.attempt_id,answers:{},proctorEvents:[]});
+    return {expired:true,result:result};
+  }
+  const ids = JSON.parse(attempt.question_ids_json || '[]');
+  const byId = {};
+  read_('PracticeQuestions').forEach(q => { byId[q.question_id] = q; });
+  const questions = ids.map(id => byId[id]).filter(Boolean).map(q => safeQuestion_(q,false,''));
+  return {
+    expired:false,attemptId:attempt.attempt_id,examType:attempt.exam_type,
+    schoolLevel:attempt.school_level,classLevel:attempt.class_level,
+    examMode:attempt.exam_mode||'standard',proctorEnabled:attempt.proctor_enabled==='true',
+    subject:attempt.subject,questionCount:questions.length,
+    durationMinutes:Number(attempt.duration_minutes)||60,
+    deadlineAt:new Date(attemptDeadline_(attempt)).toISOString(),questions:questions
+  };
+}
+
 function attemptDeadline_(attempt) {
   const explicit = Date.parse(attempt.deadline_at || '');
   if (Number.isFinite(explicit)) return explicit;
