@@ -200,8 +200,10 @@ function auth_(b) {
 
 function me_(b) {
   const u = auth_(b);
-  const activeExam = read_('PracticeAttempts').some(a => a.user_id === u.user_id && a.status === 'in_progress');
-  return {user:{userId:u.user_id, fullName:u.full_name, email:u.email, schoolLevel:u.school_level || 'SENIOR_SECONDARY', classLevel:u.class_level || 'SS 1'}, activeExam:activeExam};
+  const ownAttempts = read_('PracticeAttempts').filter(a => a.user_id === u.user_id);
+  const activeExam = ownAttempts.some(a => a.status === 'in_progress');
+  const canUseTutor = ownAttempts.some(a => a.status === 'submitted');
+  return {user:{userId:u.user_id, fullName:u.full_name, email:u.email, schoolLevel:u.school_level || 'SENIOR_SECONDARY', classLevel:u.class_level || 'SS 1'}, activeExam:activeExam, canUseTutor:canUseTutor};
 }
 
 function logout_(b) {
@@ -462,7 +464,7 @@ function uploadQuestionImage_(b) {
 function aiSettings_(){const p=PropertiesService.getScriptProperties();return {geminiConfigured:!!p.getProperty('VICORA_GEMINI_API_KEY'),groqConfigured:!!p.getProperty('VICORA_GROQ_API_KEY'),preferredProvider:p.getProperty('VICORA_AI_PROVIDER')||'gemini'};}
 function saveAiSettings_(b){const p=PropertiesService.getScriptProperties();if(b.geminiKey)p.setProperty('VICORA_GEMINI_API_KEY',String(b.geminiKey).trim());if(b.groqKey)p.setProperty('VICORA_GROQ_API_KEY',String(b.groqKey).trim());if(['gemini','groq','auto'].indexOf(String(b.preferredProvider))>=0)p.setProperty('VICORA_AI_PROVIDER',String(b.preferredProvider));return aiSettings_();}
 function verifyQuestionWithAI_(b){const q=b.question||{};const prompt='Review this Nigerian curriculum question for the stated school level and class. Check factual accuracy, ambiguity, all options, proposed correct answer, explanation and image relevance. Do not assume supplied answer is correct. Return a concise structured report with verdict PASS/REVIEW/FAIL, answerCheck, issues, suggestedCorrection, explanationCheck and levelFit. Question: '+JSON.stringify(q);return callPracticeAI_(prompt,q.image_url||'',true);}
-function studentTutor_(b){const u=auth_(b);if(read_('PracticeAttempts').some(a=>a.user_id===u.user_id&&a.status==='in_progress'))throw Error('AI Tutor is locked while you have an active examination. Submit your examination before asking AI for help.');const question=required_(b.question,'Your learning question',3000);const prompt='You are VICORA AI Tutor. Teach a student in '+(u.school_level||'SENIOR_SECONDARY')+', class '+(u.class_level||'SS 1')+'. Explain simply, step by step and age-appropriately. Student asks: '+question;return callPracticeAI_(prompt,String(b.image_url||''),false);}
+function studentTutor_(b){const u=auth_(b);const attempts=read_('PracticeAttempts').filter(a=>a.user_id===u.user_id);if(attempts.some(a=>a.status==='in_progress'))throw Error('AI Tutor is locked while you have an active examination. Submit your examination before asking AI for help.');if(!attempts.some(a=>a.status==='submitted'))throw Error('Complete at least one practice test before using the AI Tutor.');const question=required_(b.question,'Your learning question',3000);const prompt='You are VICORA AI Tutor. Teach a student in '+(u.school_level||'SENIOR_SECONDARY')+', class '+(u.class_level||'SS 1')+'. Explain simply, step by step and age-appropriately. Student asks: '+question;return callPracticeAI_(prompt,String(b.image_url||''),false);}
 function callPracticeAI_(prompt,imageUrl,isAdmin){
  const p=PropertiesService.getScriptProperties(),pref=p.getProperty('VICORA_AI_PROVIDER')||'gemini',providers=pref==='auto'?['gemini','groq']:[pref,pref==='gemini'?'groq':'gemini'];let last='No AI provider is configured.';
  for(const provider of providers){try{
