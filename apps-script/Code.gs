@@ -542,7 +542,7 @@ function callPracticeAI_(prompt,imageUrl,isAdmin){
    const answer=j.candidates&&j.candidates[0]&&j.candidates[0].content.parts.map(x=>x.text||'').join('');if(!answer)throw Error('Gemini returned no answer.');return {provider:'gemini',answer:answer};
   }
   if(provider==='groq'&&p.getProperty('VICORA_GROQ_API_KEY')){
-   const r=UrlFetchApp.fetch('https://api.groq.com/openai/v1/chat/completions',{method:'post',contentType:'application/json',headers:{Authorization:'Bearer '+p.getProperty('VICORA_GROQ_API_KEY')},payload:JSON.stringify({model:'llama-3.3-70b-versatile',messages:[{role:'user',content:prompt}],temperature:0.2,max_tokens:1200}),muteHttpExceptions:true}),j=JSON.parse(r.getContentText());
+   const r=UrlFetchApp.fetch('https://api.groq.com/openai/v1/chat/completions',{method:'post',contentType:'application/json',headers:{Authorization:'Bearer '+p.getProperty('VICORA_GROQ_API_KEY')},payload:JSON.stringify({model:'openai/gpt-oss-120b',messages:[{role:'user',content:prompt}],temperature:0.2,max_tokens:1200}),muteHttpExceptions:true}),j=JSON.parse(r.getContentText());
    if(r.getResponseCode()>=300)throw Error(j.error&&j.error.message||'Groq request failed.');const answer=j.choices&&j.choices[0]&&j.choices[0].message.content;if(!answer)throw Error('Groq returned no answer.');return {provider:'groq',answer:answer};
   }
  }catch(e){last=safeError_(e);}}
