@@ -15,16 +15,17 @@
  */
 
 const VP = Object.freeze({
-  VERSION: '1.0.0',
+  VERSION: '1.1.0',
   DB_PROP: 'VICORA_PRACTICE_DATABASE_ID',
   ADMIN_PROP: 'VICORA_PRACTICE_ADMIN_KEY',
   SESSION_MS: 30 * 24 * 60 * 60 * 1000,
   TYPES: ['WAEC', 'NECO', 'JAMB', 'GENERAL'],
+  LEVELS: ['PRIMARY', 'JUNIOR_SECONDARY', 'SENIOR_SECONDARY'],
   SHEETS: {
-    PracticeUsers: ['user_id','full_name','email','password_salt','password_hash','active','created_at','last_login'],
+    PracticeUsers: ['user_id','full_name','email','password_salt','password_hash','active','created_at','last_login','school_level','class_level'],
     PracticeSessions: ['session_id','token_hash','user_id','expires_at','created_at','revoked'],
-    PracticeQuestions: ['question_id','exam_type','subject','year','topic','difficulty','question_text','option_a','option_b','option_c','option_d','correct_option','explanation','marks','active','created_at','updated_at'],
-    PracticeAttempts: ['attempt_id','user_id','exam_type','subject','question_ids_json','question_count','started_at','submitted_at','score','total','status'],
+    PracticeQuestions: ['question_id','exam_type','school_level','class_level','subject','year','topic','difficulty','question_text','image_url','option_a','option_b','option_c','option_d','correct_option','explanation','marks','active','created_at','updated_at'],
+    PracticeAttempts: ['attempt_id','user_id','exam_type','school_level','class_level','subject','exam_mode','proctor_enabled','proctor_events_json','question_ids_json','question_count','started_at','submitted_at','score','total','status'],
     PracticeAnswers: ['answer_id','attempt_id','question_id','selected_option']
   }
 });
@@ -120,6 +121,13 @@ function doPost(e) {
       case 'practice.submit': data = submit_(body); break;
       case 'practice.admin.listQuestions': requireAdmin_(body); data = listQuestions_(); break;
       case 'practice.admin.importQuestions': requireAdmin_(body); data = importQuestions_(body); break;
+      case 'practice.admin.listUsers': requireAdmin_(body); data = listUsers_(); break;
+      case 'practice.admin.setUserStatus': requireAdmin_(body); data = setUserStatus_(body); break;
+      case 'practice.admin.uploadImage': requireAdmin_(body); data = uploadQuestionImage_(body); break;
+      case 'practice.admin.verifyQuestion': requireAdmin_(body); data = verifyQuestionWithAI_(body); break;
+      case 'practice.admin.aiSettings': requireAdmin_(body); data = aiSettings_(); break;
+      case 'practice.admin.saveAiSettings': requireAdmin_(body); data = saveAiSettings_(body); break;
+      case 'practice.ai.tutor': data = studentTutor_(body); break;
       default: throw new Error('Unsupported action: ' + action);
     }
     return json_({ok:true, data:data});
@@ -135,6 +143,8 @@ function register_(b) {
   const name = required_(b.fullName, 'Full name', 120);
   const email = validEmail_(b.email);
   const password = String(b.password || '');
+  const schoolLevel = normalLevel_(b.schoolLevel || 'SENIOR_SECONDARY');
+  const classLevel = normalClass_(schoolLevel,b.classLevel || defaultClass_(schoolLevel));
   if (password.length < 10 || password.length > 128) throw new Error('Password must contain between 10 and 128 characters.');
   const lock = LockService.getScriptLock();
   lock.waitLock(15000);
@@ -146,13 +156,14 @@ function register_(b) {
     const token = randomToken_();
     append_('PracticeUsers', {
       user_id:id, full_name:name, email:email, password_salt:salt,
-      password_hash:hash_(salt + password), active:'true', created_at:now, last_login:now
+      password_hash:hash_(salt + password), active:'true', created_at:now, last_login:now,
+      school_level:schoolLevel, class_level:classLevel
     });
     append_('PracticeSessions', {
       session_id:Utilities.getUuid(), token_hash:hash_(token), user_id:id,
       expires_at:new Date(Date.now() + VP.SESSION_MS).toISOString(), created_at:now, revoked:'false'
     });
-    return {sessionToken:token, user:{userId:id, fullName:name, email:email}};
+    return {sessionToken:token, user:{userId:id, fullName:name, email:email, schoolLevel:schoolLevel, classLevel:classLevel}};
   } finally {
     lock.releaseLock();
   }
@@ -172,7 +183,7 @@ function login_(b) {
     expires_at:new Date(Date.now() + VP.SESSION_MS).toISOString(), created_at:now, revoked:'false'
   });
   updateById_('PracticeUsers', 'user_id', user.user_id, {last_login:now});
-  return {sessionToken:token, user:{userId:user.user_id, fullName:user.full_name, email:user.email}};
+  return {sessionToken:token, user:{userId:user.user_id, fullName:user.full_name, email:user.email, schoolLevel:user.school_level || 'SENIOR_SECONDARY', classLevel:user.class_level || 'SS 1'}};
 }
 
 function auth_(b) {
@@ -189,7 +200,7 @@ function auth_(b) {
 
 function me_(b) {
   const u = auth_(b);
-  return {user:{userId:u.user_id, fullName:u.full_name, email:u.email}};
+  return {user:{userId:u.user_id, fullName:u.full_name, email:u.email, schoolLevel:u.school_level || 'SENIOR_SECONDARY', classLevel:u.class_level || 'SS 1'}};
 }
 
 function logout_(b) {
@@ -207,22 +218,31 @@ function catalog_() {
   const rows = read_('PracticeQuestions').filter(q => q.active === 'true');
   const subjects = {};
   const counts = {};
+  const subjectsByLevel = {};
   rows.forEach(function(q) {
     if (!subjects[q.exam_type]) subjects[q.exam_type] = [];
+    const level = q.school_level || 'SENIOR_SECONDARY';
+    if (!subjectsByLevel[level]) subjectsByLevel[level] = {};
+    if (!subjectsByLevel[level][q.exam_type]) subjectsByLevel[level][q.exam_type] = [];
+    if (subjectsByLevel[level][q.exam_type].indexOf(q.subject) < 0) subjectsByLevel[level][q.exam_type].push(q.subject);
     if (subjects[q.exam_type].indexOf(q.subject) < 0) subjects[q.exam_type].push(q.subject);
     counts[q.exam_type + '|' + q.subject] = (counts[q.exam_type + '|' + q.subject] || 0) + 1;
   });
   Object.keys(subjects).forEach(k => subjects[k].sort());
-  return {examTypes:VP.TYPES, subjects:subjects, counts:counts};
+  return {examTypes:VP.TYPES, levels:VP.LEVELS, subjects:subjects, subjectsByLevel:subjectsByLevel, counts:counts};
 }
 
 function start_(b) {
   const user = auth_(b);
   const type = String(b.examType || '').toUpperCase();
+  const schoolLevel = normalLevel_(b.schoolLevel || user.school_level || 'SENIOR_SECONDARY');
+  const classLevel = normalClass_(schoolLevel,b.classLevel || user.class_level || defaultClass_(schoolLevel));
+  const examMode = String(b.examMode || 'standard').toLowerCase() === 'proctored' ? 'proctored' : 'standard';
+  const proctorEnabled = examMode === 'proctored' && b.proctorEnabled !== false;
   const subject = required_(b.subject, 'Subject', 100);
   const count = Math.max(5, Math.min(60, Number(b.questionCount) || 20));
   if (VP.TYPES.indexOf(type) < 0) throw new Error('Choose a valid examination type.');
-  const available = read_('PracticeQuestions').filter(q => q.active === 'true' && q.exam_type === type && q.subject === subject);
+  const available = read_('PracticeQuestions').filter(q => q.active === 'true' && q.exam_type === type && q.subject === subject && (q.school_level || 'SENIOR_SECONDARY') === schoolLevel && (!q.class_level || q.class_level === classLevel));
   if (!available.length) throw new Error('There are no questions for this selection yet.');
   const shuffled = available.slice();
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -234,17 +254,18 @@ function start_(b) {
   const attemptId = Utilities.getUuid();
   const now = new Date().toISOString();
   append_('PracticeAttempts', {
-    attempt_id:attemptId, user_id:user.user_id, exam_type:type, subject:subject,
+    attempt_id:attemptId, user_id:user.user_id, exam_type:type, school_level:schoolLevel, class_level:classLevel, subject:subject,
+    exam_mode:examMode, proctor_enabled:String(proctorEnabled), proctor_events_json:'[]',
     question_ids_json:JSON.stringify(ids), question_count:ids.length,
     started_at:now, submitted_at:'', score:'', total:'', status:'in_progress'
   });
-  return {attemptId:attemptId, examType:type, subject:subject, questionCount:ids.length, questions:chosen.map(q => safeQuestion_(q, false, ''))};
+  return {attemptId:attemptId, examType:type, schoolLevel:schoolLevel, classLevel:classLevel, examMode:examMode, proctorEnabled:proctorEnabled, subject:subject, questionCount:ids.length, questions:chosen.map(q => safeQuestion_(q, false, ''))};
 }
 
 function safeQuestion_(q, includeAnswer, selected) {
   const out = {
     id:q.question_id, examType:q.exam_type, subject:q.subject, year:q.year,
-    topic:q.topic, difficulty:q.difficulty, questionText:q.question_text,
+    topic:q.topic, difficulty:q.difficulty, questionText:q.question_text, imageUrl:q.image_url || '',
     options:{A:q.option_a, B:q.option_b, C:q.option_c, D:q.option_d}
   };
   if (includeAnswer) {
@@ -287,7 +308,8 @@ function submit_(b) {
       sh.getRange(sh.getLastRow() + 1, 1, answerRows.length, 4).setValues(answerRows);
     }
     updateById_('PracticeAttempts', 'attempt_id', id, {
-      submitted_at:new Date().toISOString(), score:String(score), total:String(total), status:'submitted'
+      submitted_at:new Date().toISOString(), score:String(score), total:String(total), status:'submitted',
+      proctor_events_json:JSON.stringify(Array.isArray(b.proctorEvents) ? b.proctorEvents.slice(0,100) : [])
     });
     const review = ids.map(qid => {
       const q = byId[qid];
@@ -311,7 +333,7 @@ function history_(b) {
   return {attempts:rows.map(function(a) {
     const total = Number(a.total) || 0, score = Number(a.score) || 0;
     return {
-      id:a.attempt_id, exam_type:a.exam_type, subject:a.subject, status:a.status,
+      id:a.attempt_id, exam_type:a.exam_type, school_level:a.school_level || 'SENIOR_SECONDARY', class_level:a.class_level || 'SS 1', subject:a.subject, status:a.status,
       percent:total ? Math.round(score / total * 1000) / 10 : 0,
       score:score, total:total, question_count:Number(a.question_count) || 0,
       submitted_at:a.submitted_at ? Math.floor(Date.parse(a.submitted_at) / 1000) : null
@@ -361,8 +383,8 @@ function requireAdmin_(b) {
 function listQuestions_() {
   const rows = read_('PracticeQuestions').sort((a,b) => String(b.updated_at || b.created_at).localeCompare(String(a.updated_at || a.created_at)));
   return {questions:rows.map(q => ({
-    id:q.question_id, exam_type:q.exam_type, subject:q.subject, year:q.year,
-    topic:q.topic, difficulty:q.difficulty, question_text:q.question_text,
+    id:q.question_id, exam_type:q.exam_type, school_level:q.school_level || 'SENIOR_SECONDARY', class_level:q.class_level || '', subject:q.subject, year:q.year,
+    topic:q.topic, difficulty:q.difficulty, question_text:q.question_text, image_url:q.image_url || '',
     option_a:q.option_a, option_b:q.option_b, option_c:q.option_c, option_d:q.option_d,
     correct_option:q.correct_option, explanation:q.explanation,
     marks:Number(q.marks) || 1, active:q.active === 'true'
@@ -378,6 +400,8 @@ function importQuestions_(b) {
     let saved = 0;
     list.forEach(function(q) {
       const type = String(q.exam_type || '').toUpperCase();
+      const schoolLevel = normalLevel_(q.school_level || 'SENIOR_SECONDARY');
+      const classLevel = normalClass_(schoolLevel,q.class_level || defaultClass_(schoolLevel));
       const subject = required_(q.subject, 'Subject', 100);
       const questionText = required_(q.question_text, 'Question', 5000);
       const correct = String(q.correct_option || '').toUpperCase();
@@ -388,9 +412,9 @@ function importQuestions_(b) {
         all.find(x => x.exam_type === type && x.subject === subject && x.question_text === questionText);
       const now = new Date().toISOString();
       const values = {
-        exam_type:type, subject:subject, year:clean_(q.year || '',12),
+        exam_type:type, school_level:schoolLevel, class_level:classLevel, subject:subject, year:clean_(q.year || '',12),
         topic:clean_(q.topic || '',160), difficulty:clean_(q.difficulty || 'medium',30),
-        question_text:questionText, option_a:options[0], option_b:options[1],
+        question_text:questionText, image_url:clean_(q.image_url || '',2000), option_a:options[0], option_b:options[1],
         option_c:options[2], option_d:options[3], correct_option:correct,
         explanation:clean_(q.explanation || '',5000),
         marks:String(Math.max(0.01,Math.min(100,Number(q.marks) || 1))),
@@ -410,6 +434,55 @@ function importQuestions_(b) {
     lock.releaseLock();
   }
 }
+
+
+function listUsers_() {
+  const attempts=read_('PracticeAttempts'),rows=read_('PracticeUsers').sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+  return {users:rows.map(u=>{const own=attempts.filter(a=>a.user_id===u.user_id);return {user_id:u.user_id,full_name:u.full_name,email:u.email,active:u.active==='true',created_at:u.created_at,last_login:u.last_login,school_level:u.school_level||'SENIOR_SECONDARY',class_level:u.class_level||'SS 1',attempts:own.length,completed:own.filter(a=>a.status==='submitted').length};})};
+}
+function setUserStatus_(b) {
+  const id=required_(b.userId,'User ID',80),active=b.active===true||String(b.active)==='true';
+  updateById_('PracticeUsers','user_id',id,{active:String(active)});
+  if(!active)read_('PracticeSessions').filter(x=>x.user_id===id&&x.revoked!=='true').forEach(x=>updateById_('PracticeSessions','session_id',x.session_id,{revoked:'true'}));
+  return {updated:true,active:active};
+}
+function uploadQuestionImage_(b) {
+  const m=String(b.dataUrl||'').match(/^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,([A-Za-z0-9+/=]+)$/i);
+  if(!m)throw Error('Upload a PNG, JPG, WEBP or GIF image.');
+  if(m[2].length>5*1024*1024)throw Error('Image is too large. Please use an image under 3.5 MB.');
+  const p=PropertiesService.getScriptProperties();let fid=p.getProperty('VICORA_PRACTICE_IMAGE_FOLDER_ID');
+  const folder=fid?DriveApp.getFolderById(fid):DriveApp.createFolder('VICORA Public Practice Question Images');
+  if(!fid)p.setProperty('VICORA_PRACTICE_IMAGE_FOLDER_ID',folder.getId());
+  const mime=m[1].toLowerCase()==='image/jpg'?'image/jpeg':m[1].toLowerCase();
+  const file=folder.createFile(Utilities.newBlob(Utilities.base64Decode(m[2]),mime,clean_(b.fileName||'question-image',120)));
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK,DriveApp.Permission.VIEW);
+  return {imageUrl:'https://drive.google.com/uc?export=view&id='+file.getId()};
+}
+function aiSettings_(){const p=PropertiesService.getScriptProperties();return {geminiConfigured:!!p.getProperty('VICORA_GEMINI_API_KEY'),groqConfigured:!!p.getProperty('VICORA_GROQ_API_KEY'),preferredProvider:p.getProperty('VICORA_AI_PROVIDER')||'gemini'};}
+function saveAiSettings_(b){const p=PropertiesService.getScriptProperties();if(b.geminiKey)p.setProperty('VICORA_GEMINI_API_KEY',String(b.geminiKey).trim());if(b.groqKey)p.setProperty('VICORA_GROQ_API_KEY',String(b.groqKey).trim());if(['gemini','groq','auto'].indexOf(String(b.preferredProvider))>=0)p.setProperty('VICORA_AI_PROVIDER',String(b.preferredProvider));return aiSettings_();}
+function verifyQuestionWithAI_(b){const q=b.question||{};const prompt='Review this Nigerian curriculum question for the stated school level and class. Check factual accuracy, ambiguity, all options, proposed correct answer, explanation and image relevance. Do not assume supplied answer is correct. Return a concise structured report with verdict PASS/REVIEW/FAIL, answerCheck, issues, suggestedCorrection, explanationCheck and levelFit. Question: '+JSON.stringify(q);return callPracticeAI_(prompt,q.image_url||'',true);}
+function studentTutor_(b){const u=auth_(b);if(read_('PracticeAttempts').some(a=>a.user_id===u.user_id&&a.status==='in_progress'))throw Error('AI Tutor is locked while you have an active examination. Submit your examination before asking AI for help.');const question=required_(b.question,'Your learning question',3000);const prompt='You are VICORA AI Tutor. Teach a student in '+(u.school_level||'SENIOR_SECONDARY')+', class '+(u.class_level||'SS 1')+'. Explain simply, step by step and age-appropriately. Student asks: '+question;return callPracticeAI_(prompt,String(b.image_url||''),false);}
+function callPracticeAI_(prompt,imageUrl,isAdmin){
+ const p=PropertiesService.getScriptProperties(),pref=p.getProperty('VICORA_AI_PROVIDER')||'gemini',providers=pref==='auto'?['gemini','groq']:[pref,pref==='gemini'?'groq':'gemini'];let last='No AI provider is configured.';
+ for(const provider of providers){try{
+  if(provider==='gemini'&&p.getProperty('VICORA_GEMINI_API_KEY')){
+   const parts=[{text:prompt}];
+   if(imageUrl){const fid=(String(imageUrl).match(/[?&]id=([^&]+)/)||[])[1];if(fid){const blob=DriveApp.getFileById(fid).getBlob();parts.push({inlineData:{mimeType:blob.getContentType(),data:Utilities.base64Encode(blob.getBytes())}});}else parts.push({text:'Image URL: '+imageUrl});}
+   const url='https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key='+encodeURIComponent(p.getProperty('VICORA_GEMINI_API_KEY'));
+   const r=UrlFetchApp.fetch(url,{method:'post',contentType:'application/json',payload:JSON.stringify({contents:[{parts:parts}],generationConfig:{temperature:0.2,maxOutputTokens:1200}}),muteHttpExceptions:true}),j=JSON.parse(r.getContentText());
+   if(r.getResponseCode()>=300)throw Error(j.error&&j.error.message||'Gemini request failed.');
+   const answer=j.candidates&&j.candidates[0]&&j.candidates[0].content.parts.map(x=>x.text||'').join('');if(!answer)throw Error('Gemini returned no answer.');return {provider:'gemini',answer:answer};
+  }
+  if(provider==='groq'&&p.getProperty('VICORA_GROQ_API_KEY')){
+   const r=UrlFetchApp.fetch('https://api.groq.com/openai/v1/chat/completions',{method:'post',contentType:'application/json',headers:{Authorization:'Bearer '+p.getProperty('VICORA_GROQ_API_KEY')},payload:JSON.stringify({model:'llama-3.3-70b-versatile',messages:[{role:'user',content:prompt}],temperature:0.2,max_tokens:1200}),muteHttpExceptions:true}),j=JSON.parse(r.getContentText());
+   if(r.getResponseCode()>=300)throw Error(j.error&&j.error.message||'Groq request failed.');const answer=j.choices&&j.choices[0]&&j.choices[0].message.content;if(!answer)throw Error('Groq returned no answer.');return {provider:'groq',answer:answer};
+  }
+ }catch(e){last=safeError_(e);}}
+ throw Error(last==='No AI provider is configured.'?'AI is not configured. Add Gemini or Groq API keys in VICORA AI settings.':last);
+}
+function normalLevel_(v){const x=String(v||'').toUpperCase().replace(/[ -]+/g,'_');if(VP.LEVELS.indexOf(x)<0)throw Error('Choose Primary, Junior Secondary or Senior Secondary.');return x;}
+function defaultClass_(l){return l==='PRIMARY'?'Primary 1':l==='JUNIOR_SECONDARY'?'JSS 1':'SS 1';}
+function normalClass_(l,v){const x=clean_(v,30),ok=l==='PRIMARY'?/^Primary [1-6]$/i.test(x):l==='JUNIOR_SECONDARY'?/^JSS [1-3]$/i.test(x):/^SS [1-3]$/i.test(x);if(!ok)throw Error('Choose a class that matches the selected school level.');return l==='PRIMARY'?x.replace(/^primary/i,'Primary'):x.toUpperCase();}
 
 // ------------------------------- Utilities --------------------------------
 
