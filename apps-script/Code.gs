@@ -573,10 +573,20 @@ function listQuestions_() {
 
 function importQuestions_(b) {
   const list = b.questions;
-  if (!Array.isArray(list) || list.length < 1 || list.length > 100) throw new Error('Import between 1 and 100 questions per request.');
+  if (!Array.isArray(list) || list.length < 1 || list.length > 500) throw new Error('Import between 1 and 500 questions per request. The website automatically splits large uploads into batches.');
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
+    const existingRows = read_('PracticeQuestions');
+    const byKey = {};
+    existingRows.forEach(function(row) {
+      const key = [row.exam_type, row.subject, row.school_level || 'SENIOR_SECONDARY', row.class_level || defaultClass_(row.school_level || 'SENIOR_SECONDARY'), row.question_text].join('\u001f');
+      byKey[key] = row;
+    });
+    const now = new Date().toISOString();
+    const sh = sheet_('PracticeQuestions');
+    const headers = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(String);
+    const inserts = [];
     let saved = 0;
     list.forEach(function(q) {
       const type = String(q.exam_type || '').toUpperCase();
@@ -587,10 +597,8 @@ function importQuestions_(b) {
       const correct = String(q.correct_option || '').toUpperCase();
       if (VP.TYPES.indexOf(type) < 0 || ['A','B','C','D'].indexOf(correct) < 0) throw new Error('Each question needs a valid exam type and correct option.');
       const options = ['a','b','c','d'].map(k => required_(q['option_' + k], 'Option ' + k.toUpperCase(), 1500));
-      const all = read_('PracticeQuestions');
-      const existing = (q.question_id ? findOne_('PracticeQuestions','question_id',String(q.question_id)) : null) ||
-        all.find(x => x.exam_type === type && x.subject === subject && (x.school_level || 'SENIOR_SECONDARY') === schoolLevel && (x.class_level || defaultClass_(schoolLevel)) === classLevel && x.question_text === questionText);
-      const now = new Date().toISOString();
+      const key = [type,subject,schoolLevel,classLevel,questionText].join('\u001f');
+      const existing = (q.question_id ? existingRows.find(x => x.question_id === String(q.question_id)) : null) || byKey[key];
       const values = {
         exam_type:type, school_level:schoolLevel, class_level:classLevel, subject:subject, year:clean_(q.year || '',12),
         topic:clean_(q.topic || '',160), difficulty:clean_(q.difficulty || 'medium',30),
@@ -605,16 +613,19 @@ function importQuestions_(b) {
       } else {
         values.question_id = Utilities.getUuid();
         values.created_at = now;
-        append_('PracticeQuestions',values);
+        inserts.push(headers.map(h => Object.prototype.hasOwnProperty.call(values,h) ? values[h] : ''));
+        const newRow = Object.assign({question_id:values.question_id},values);
+        byKey[key] = newRow;
+        existingRows.push(newRow);
       }
       saved++;
     });
+    if (inserts.length) sh.getRange(sh.getLastRow()+1,1,inserts.length,headers.length).setValues(inserts);
     return {saved:saved};
   } finally {
     lock.releaseLock();
   }
 }
-
 
 function listUsers_() {
   const attempts=read_('PracticeAttempts'),rows=read_('PracticeUsers').sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
