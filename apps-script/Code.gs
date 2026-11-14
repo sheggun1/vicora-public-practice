@@ -29,7 +29,8 @@ const VP = Object.freeze({
     PracticeAnswers: ['answer_id','attempt_id','question_id','selected_option'],
     PracticeAdmins: ['admin_id','username','password_salt','password_hash','active','created_at','last_login'],
     PracticeAdminSessions: ['session_id','token_hash','admin_id','expires_at','created_at','revoked'],
-    PracticePasswordResets: ['reset_id','user_id','token_hash','expires_at','used','created_at']
+    PracticePasswordResets: ['reset_id','user_id','token_hash','expires_at','used','created_at'],
+    PracticeProctorCaptures: ['capture_id','attempt_id','user_id','drive_file_id','captured_at']
   }
 });
 
@@ -116,6 +117,7 @@ function doPost(e) {
       case 'practice.history': data = history_(body); break;
       case 'practice.history.detail': data = historyDetail_(body); break;
       case 'practice.start': data = start_(body); break;
+      case 'practice.proctor.capture': data = saveProctorCapture_(body); break;
       case 'practice.resume': data = resume_(body); break;
       case 'practice.submit': data = submit_(body); break;
       case 'practice.admin.listQuestions': requireAdmin_(body); data = listQuestions_(); break;
@@ -291,7 +293,8 @@ function start_(b) {
   const user = auth_(b);
   const type = String(b.examType || '').toUpperCase();
   const schoolLevel = normalLevel_(b.schoolLevel || user.school_level || 'SENIOR_SECONDARY');
-  const classLevel = normalClass_(schoolLevel,b.classLevel || user.class_level || defaultClass_(schoolLevel));
+  const requestedClass = String(b.classLevel || 'ALL').toUpperCase();
+  const classLevel = requestedClass === 'ALL' ? 'ALL' : normalClass_(schoolLevel,requestedClass);
   const examMode = String(b.examMode || 'standard').toLowerCase() === 'proctored' ? 'proctored' : 'standard';
   const proctorEnabled = examMode === 'proctored' && b.proctorEnabled !== false;
   const subject = required_(b.subject, 'Subject', 100);
@@ -303,7 +306,7 @@ function start_(b) {
   });
   if (read_('PracticeAttempts').some(a => a.user_id === user.user_id && a.status === 'in_progress')) throw new Error('You already have an examination in progress. Resume or submit it before starting another.');
   if (VP.TYPES.indexOf(type) < 0) throw new Error('Choose a valid examination type.');
-  const available = read_('PracticeQuestions').filter(q => q.active === 'true' && q.exam_type === type && q.subject === subject && (q.school_level || 'SENIOR_SECONDARY') === schoolLevel && (!q.class_level || q.class_level === classLevel));
+  const available = read_('PracticeQuestions').filter(q => q.active === 'true' && q.exam_type === type && q.subject === subject && (q.school_level || 'SENIOR_SECONDARY') === schoolLevel && (classLevel === 'ALL' || !q.class_level || q.class_level === classLevel));
   if (!available.length) throw new Error('There are no questions for this selection yet.');
   const shuffled = available.slice();
   for (let i = shuffled.length - 1; i > 0; i--) {
@@ -323,6 +326,42 @@ function start_(b) {
     submitted_at:'', score:'', total:'', status:'in_progress'
   });
   return {attemptId:attemptId, examType:type, schoolLevel:schoolLevel, classLevel:classLevel, examMode:examMode, proctorEnabled:proctorEnabled, subject:subject, questionCount:ids.length, durationMinutes:durationMinutes, deadlineAt:deadlineAt, questions:chosen.map(q => safeQuestion_(q, false, ''))};
+}
+
+function saveProctorCapture_(b) {
+  const user = auth_(b);
+  const attemptId = required_(b.attemptId, 'Attempt ID', 80);
+  const attempt = findOne_('PracticeAttempts', 'attempt_id', attemptId);
+  if (!attempt || attempt.user_id !== user.user_id) throw new Error('Proctored examination not found.');
+  if (attempt.status !== 'in_progress' || attempt.proctor_enabled !== 'true' || attempt.exam_mode !== 'proctored') {
+    throw new Error('Camera captures are accepted only during an active proctored examination.');
+  }
+  if (Date.now() >= attemptDeadline_(attempt)) throw new Error('The examination time has expired.');
+  const dataUrl = String(b.dataUrl || '');
+  const match = dataUrl.match(/^data:image\\/(jpeg|jpg|png);base64,([A-Za-z0-9+/=]+)$/i);
+  if (!match || match[2].length > 180000) throw new Error('Invalid camera image. Please retry with a smaller image.');
+  const props = PropertiesService.getScriptProperties();
+  let folderId = props.getProperty('VICORA_PRACTICE_PROCTOR_FOLDER_ID');
+  let folder;
+  if (folderId) {
+    try { folder = DriveApp.getFolderById(folderId); }
+    catch (e) { folder = null; }
+  }
+  if (!folder) {
+    folder = DriveApp.createFolder('VICORA Private Proctor Captures');
+    props.setProperty('VICORA_PRACTICE_PROCTOR_FOLDER_ID', folder.getId());
+  }
+  const now = new Date();
+  const captureId = Utilities.getUuid();
+  const blob = Utilities.newBlob(Utilities.base64Decode(match[2]), 'image/jpeg',
+    'vicora-proctor-' + attemptId + '-' + now.getTime() + '.jpg');
+  const file = folder.createFile(blob);
+  // Keep captures private in Drive; never publish a camera image by link.
+  append_('PracticeProctorCaptures', {
+    capture_id:captureId, attempt_id:attemptId, user_id:user.user_id,
+    drive_file_id:file.getId(), captured_at:now.toISOString()
+  });
+  return {saved:true, capturedAt:now.toISOString()};
 }
 
 function safeQuestion_(q, includeAnswer, selected) {
