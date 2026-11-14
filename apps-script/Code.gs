@@ -8,7 +8,7 @@
  * 3. Select setupVICORAPublicPractice and click Run; approve permissions.
  * 4. Open the execution log. Save the generated administrator key securely.
  * 5. Deploy > New deployment > Web app; Execute as: Me; access: Anyone.
- * 6. Copy the /exec URL into Vercel as VICORA_APPS_SCRIPT_URL.
+ * 6. Share the deployed /exec URL with students and administrators.
  *
  * The setup function is safe to run again: it reuses the same database and key.
  * It does not overwrite existing records.
@@ -88,7 +88,7 @@ function setupVICORAPublicPractice() {
     nextSteps: [
       'Save the administrator key securely.',
       'Deploy this project as a Web app, executing as you, accessible to anyone.',
-      'Set the Vercel environment variable VICORA_APPS_SCRIPT_URL to the deployed /exec URL.'
+      'Use the deployed /exec URL as the student and administrator website.'
     ]
   };
   Logger.log(JSON.stringify(result, null, 2));
