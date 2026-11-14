@@ -15,7 +15,7 @@
  */
 
 const VP = Object.freeze({
-  VERSION: '1.4.0',
+  VERSION: '1.5.0',
   DB_PROP: 'VICORA_PRACTICE_DATABASE_ID',
   ADMIN_PROP: 'VICORA_PRACTICE_ADMIN_KEY',
   SESSION_MS: 365 * 24 * 60 * 60 * 1000,
@@ -337,6 +337,8 @@ function saveProctorCapture_(b) {
     throw new Error('Camera captures are accepted only during an active proctored examination.');
   }
   if (Date.now() >= attemptDeadline_(attempt)) throw new Error('The examination time has expired.');
+  ensureProctorCleanupTrigger_();
+  cleanupExpiredProctorCaptures_();
   const dataUrl = String(b.dataUrl || '');
   const match = dataUrl.match(/^data:image\/(jpeg|jpg|png);base64,([A-Za-z0-9+/=]+)$/i);
   if (!match || match[2].length > 180000) throw new Error('Invalid camera image. Please retry with a smaller image.');
@@ -370,6 +372,27 @@ function saveProctorCapture_(b) {
     drive_file_id:file.getId(), captured_at:now.toISOString()
   });
   return {saved:true, capturedAt:now.toISOString()};
+}
+
+function ensureProctorCleanupTrigger_() {
+  const exists = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'cleanupExpiredProctorCaptures_');
+  if (!exists) ScriptApp.newTrigger('cleanupExpiredProctorCaptures_').timeBased().everyMinutes(5).create();
+}
+
+function cleanupExpiredProctorCaptures_() {
+  const sh = db_().getSheetByName('PracticeProctorCaptures');
+  if (!sh || sh.getLastRow() < 2) return {deleted:0};
+  const values = sh.getDataRange().getValues(), headers = values[0].map(String);
+  const fileCol = headers.indexOf('drive_file_id'), timeCol = headers.indexOf('captured_at');
+  if (fileCol < 0 || timeCol < 0) return {deleted:0};
+  const cutoff = Date.now() - 60 * 60 * 1000; let deleted = 0;
+  for (let i=1;i<values.length;i++) {
+    const fileId=String(values[i][fileCol]||''), capturedAt=new Date(values[i][timeCol]).getTime();
+    if(!fileId || !Number.isFinite(capturedAt) || capturedAt>cutoff) continue;
+    try { DriveApp.getFileById(fileId).setTrashed(true); sh.getRange(i+1,fileCol+1).clearContent(); deleted++; }
+    catch(e) { console.warn('Expired camera image deletion will retry: '+e.message); }
+  }
+  return {deleted:deleted};
 }
 
 function safeQuestion_(q, includeAnswer, selected) {
