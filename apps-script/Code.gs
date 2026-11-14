@@ -6,7 +6,7 @@
  * 1. Create a NEW Apps Script project.
  * 2. Replace Code.gs with this complete file and save.
  * 3. Select setupVICORAPublicPractice and click Run; approve permissions.
- * 4. Open the execution log. Save the generated administrator key securely.
+ * 4. Run initializeVICORAAdminLogin once to seed the username/password admin account.
  * 5. Deploy > New deployment > Web app; Execute as: Me; access: Anyone.
  * 6. Copy the /exec URL into Vercel as VICORA_APPS_SCRIPT_URL.
  *
@@ -36,7 +36,7 @@ const VP = Object.freeze({
 /**
  * Run this function once from the Apps Script editor.
  * Creates a dedicated spreadsheet and all tabs, and generates the admin key.
- * The key is saved in Script Properties and returned/logged only during setup.
+ * Admin credentials are stored as salted password hashes in the database.
  */
 function setupVICORAPublicPractice() {
   const props = PropertiesService.getScriptProperties();
@@ -73,22 +73,12 @@ function setupVICORAPublicPractice() {
     ss.deleteSheet(defaultSheet);
   }
 
-  let adminKey = props.getProperty(VP.ADMIN_PROP);
-  let keyWasCreated = false;
-  if (!adminKey || adminKey.length < 40) {
-    adminKey = 'VICORA-PRAC-' + randomToken_() + randomToken_().slice(0, 12);
-    props.setProperty(VP.ADMIN_PROP, adminKey);
-    keyWasCreated = true;
-  }
-
   const result = {
     status: 'READY',
     message: 'VICORA Public Practice database is ready.',
     spreadsheetUrl: ss.getUrl(),
     spreadsheetId: dbId,
     tabs: Object.keys(VP.SHEETS),
-    administratorKey: adminKey,
-    administratorKeyWasGeneratedNow: keyWasCreated,
     nextSteps: [
       'Save the administrator key securely.',
       'Deploy this project as a Web app, executing as you, accessible to anyone.',
@@ -612,6 +602,11 @@ function normalLevel_(v){const x=String(v||'').toUpperCase().replace(/[ -]+/g,'_
 function defaultClass_(l){return l==='PRIMARY'?'Primary 1':l==='JUNIOR_SECONDARY'?'JSS 1':'SS 1';}
 function normalClass_(l,v){const x=clean_(v,30),ok=l==='PRIMARY'?/^Primary [1-6]$/i.test(x):l==='JUNIOR_SECONDARY'?/^JSS [1-3]$/i.test(x):/^SS [1-3]$/i.test(x);if(!ok)throw Error('Choose a class that matches the selected school level.');return l==='PRIMARY'?x.replace(/^primary/i,'Primary'):x.toUpperCase();}
 
+function authorizeVICORAPasswordResetEmail(){
+  const quota=MailApp.getRemainingDailyQuota();
+  Logger.log('VICORA password reset email authorization is ready. Remaining daily recipient quota: '+quota);
+  return {authorized:true,remainingDailyQuota:quota};
+}
 function initializeVICORAAdminLogin(){
  const id=PropertiesService.getScriptProperties().getProperty(VP.DB_PROP);if(!id)throw Error('Existing practice database was not found. Do not create a new database.');
  const ss=SpreadsheetApp.openById(id),specs={PracticeAdmins:['admin_id','username','password_salt','password_hash','active','created_at','last_login'],PracticeAdminSessions:['session_id','token_hash','admin_id','expires_at','created_at','revoked'],PracticePasswordResets:['reset_id','user_id','token_hash','expires_at','used','created_at']};
