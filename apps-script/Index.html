@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>VICORA Public Practice</title>
+  <style>
+    :root{--ink:#172033;--muted:#697386;--brand:#5146d8;--brand2:#756cf0;--line:#e6e9f0;--bg:#f5f7fc;--white:#fff;--good:#12805c;--bad:#c23b52}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 Inter,Arial,sans-serif}
+    button,input,select,textarea{font:inherit}button{cursor:pointer;border:0;border-radius:11px;padding:11px 16px;background:var(--brand);color:#fff;font-weight:650}
+    button:disabled{opacity:.55;cursor:not-allowed}.secondary{background:#eef0ff;color:var(--brand)}.danger{background:#fff0f1;color:var(--bad)}
+    .top{background:#11182b;color:#fff;padding:16px 5%;display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .brand{font-size:21px;font-weight:850;letter-spacing:1.4px}.brand span{color:#9e98ff}.top small{color:#c5c9d6}
+    main{max-width:1100px;margin:32px auto;padding:0 18px}.panel{background:#fff;border:1px solid var(--line);border-radius:18px;padding:24px;box-shadow:0 10px 35px #1d2a4810}
+    .narrow{max-width:470px;margin:50px auto}.muted{color:var(--muted)}.eyebrow{color:var(--brand);font-size:12px;font-weight:800;letter-spacing:1.3px;text-transform:uppercase}
+    h1,h2,h3{line-height:1.2;margin:8px 0 14px}h1{font-size:30px}h2{font-size:23px}h3{font-size:17px}
+    label{display:block;font-size:13px;font-weight:700;margin:13px 0 6px}input,select,textarea{width:100%;border:1px solid #dce1eb;border-radius:10px;padding:12px;background:#fff;color:var(--ink);outline:none}
+    input:focus,select:focus,textarea:focus{border-color:var(--brand);box-shadow:0 0 0 3px #5146d81a}
+    .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+    .tabs{display:flex;gap:8px;margin:18px 0}.tabs button{background:#eef0f6;color:#596174}.tabs button.active{background:var(--brand);color:white}
+    .hidden{display:none!important}.notice{padding:12px 14px;border-radius:10px;background:#f0f1ff;color:#37318f;margin:14px 0}.error{background:#fff0f1;color:#a62b42}.success{background:#eaf8f1;color:#126747}
+    .statrow{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:20px 0}.stat{background:#f7f8fc;border:1px solid var(--line);padding:16px;border-radius:13px}.stat strong{display:block;font-size:24px}
+    .question{padding:20px 0;border-bottom:1px solid var(--line)}.question:last-child{border:0}.qnum{color:var(--brand);font-weight:800;font-size:12px}
+    .option{display:flex;gap:10px;align-items:flex-start;padding:11px;border:1px solid var(--line);border-radius:10px;margin:8px 0;cursor:pointer}.option input{width:auto;margin-top:4px}.option.selected{border-color:var(--brand);background:#f4f3ff}
+    .result-good{color:var(--good);font-weight:800}.result-bad{color:var(--bad);font-weight:800}.bar{height:9px;background:#eceef5;border-radius:20px;overflow:hidden}.bar i{display:block;height:100%;background:var(--brand)}
+    .tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:10px;border-bottom:1px solid var(--line);vertical-align:top}th{color:var(--muted)}
+    textarea{min-height:130px;resize:vertical}.footer{text-align:center;color:#9299a8;font-size:12px;padding:28px}
+    @media(max-width:650px){main{margin:18px auto}.panel{padding:18px}.grid,.statrow{grid-template-columns:1fr}h1{font-size:25px}.top{padding:14px 18px}}
+  </style>
+</head>
+<body>
+<header class="top"><div><div class="brand">VIC<span>ORA</span></div><small>PUBLIC CBT PRACTICE</small></div><button id="logoutBtn" class="secondary hidden" onclick="logout()">Sign out</button></header>
+<main>
+  <section id="authView" class="panel narrow">
+    <div class="eyebrow">Learn. Practise. Improve.</div><h1>Prepare with confidence.</h1>
+    <p class="muted">Access free WAEC, NECO, JAMB and general practice questions. Your progress is saved to your account.</p>
+    <div class="tabs"><button id="loginTab" class="active" onclick="showAuth('login')">Sign in</button><button id="registerTab" onclick="showAuth('register')">Create account</button></div>
+    <div id="loginForm">
+      <label>Email address</label><input id="loginEmail" type="email" autocomplete="email" placeholder="you@example.com">
+      <label>Password</label><input id="loginPassword" type="password" autocomplete="current-password" placeholder="Your password">
+      <div class="actions"><button onclick="login()">Sign in to VICORA</button><button class="secondary" onclick="showAdmin()">Administrator</button></div>
+    </div>
+    <div id="registerForm" class="hidden">
+      <label>Full name</label><input id="regName" autocomplete="name" placeholder="Your full name">
+      <label>Email address</label><input id="regEmail" type="email" autocomplete="email" placeholder="you@example.com">
+      <label>Create password (minimum 10 characters)</label><input id="regPassword" type="password" autocomplete="new-password" placeholder="At least 10 characters">
+      <div class="actions"><button onclick="register()">Create free account</button></div>
+    </div>
+    <div id="authMsg" class="notice hidden"></div>
+  </section>
+
+  <section id="dashboard" class="hidden">
+    <div class="panel"><div class="eyebrow">Student workspace</div><h1 id="welcome">Welcome</h1><p class="muted">Choose an examination and subject to begin practising.</p>
+      <div class="statrow"><div class="stat"><span class="muted">Practice sessions</span><strong id="statAttempts">0</strong></div><div class="stat"><span class="muted">Average score</span><strong id="statAverage">—</strong></div><div class="stat"><span class="muted">Available subjects</span><strong id="statSubjects">0</strong></div></div>
+      <div class="grid"><div><label>Examination</label><select id="examType" onchange="loadSubjects()"><option value="">Select examination</option><option>WAEC</option><option>NECO</option><option>JAMB</option><option>GENERAL</option></select></div><div><label>Subject</label><select id="subject"><option value="">Select subject</option></select></div><div><label>Number of questions</label><select id="questionCount"><option>10</option><option selected>20</option><option>30</option><option>40</option><option>60</option></select></div></div>
+      <div class="actions"><button onclick="startPractice()">Start practice</button><button class="secondary" onclick="loadHistory()">Refresh history</button></div>
+    </div>
+    <div class="panel" style="margin-top:18px"><h2>Recent practice</h2><div id="historyList" class="muted">No practice sessions yet.</div></div>
+  </section>
+
+  <section id="examView" class="panel hidden">
+    <div class="eyebrow" id="examMeta">PRACTICE SESSION</div><h2 id="examHeading">Answer the questions</h2><p class="muted">Select one answer for each question. Correct answers are revealed after you submit.</p>
+    <div id="questions"></div><div class="actions"><button onclick="submitPractice()">Submit answers</button><button class="secondary" onclick="backDashboard()">Exit practice</button></div><div id="examMsg" class="notice hidden"></div>
+  </section>
+
+  <section id="resultView" class="panel hidden"><div class="eyebrow">Practice completed</div><h1>Your result</h1><div id="resultSummary"></div><div class="actions"><button onclick="backDashboard()">Back to dashboard</button><button class="secondary" onclick="loadHistory()">Refresh history</button></div><h2 style="margin-top:28px">Answer review</h2><div id="reviewList"></div></section>
+
+  <section id="adminView" class="panel hidden">
+    <div class="eyebrow">VICORA CONTROL CENTRE</div><h1>Administrator dashboard</h1><p class="muted">Enter your private administrator key. Never share this key with students.</p>
+    <div id="adminLogin"><label>Administrator key</label><input id="adminKey" type="password" autocomplete="off" placeholder="Paste your administrator key"><div class="actions"><button onclick="adminLogin()">Unlock dashboard</button><button class="secondary" onclick="backAuth()">Student sign in</button></div></div>
+    <div id="adminTools" class="hidden">
+      <div class="statrow"><div class="stat"><span class="muted">Questions in bank</span><strong id="adminCount">0</strong></div><div class="stat"><span class="muted">Supported exams</span><strong>4</strong></div><div class="stat"><span class="muted">Access</span><strong>Admin</strong></div></div>
+      <h2>Add questions</h2><p class="muted">Enter one question at a time. All four options and the correct option are required.</p>
+      <div class="grid"><div><label>Exam type</label><select id="qType"><option>WAEC</option><option>NECO</option><option>JAMB</option><option>GENERAL</option></select></div><div><label>Subject</label><input id="qSubject" placeholder="e.g. Mathematics"></div><div><label>Year (optional)</label><input id="qYear" placeholder="e.g. 2025"></div><div><label>Topic (optional)</label><input id="qTopic" placeholder="e.g. Algebra"></div></div>
+      <label>Question</label><textarea id="qText" placeholder="Type the question"></textarea>
+      <div class="grid"><div><label>Option A</label><input id="qA"></div><div><label>Option B</label><input id="qB"></div><div><label>Option C</label><input id="qC"></div><div><label>Option D</label><input id="qD"></div></div>
+      <div class="grid"><div><label>Correct option</label><select id="qCorrect"><option>A</option><option>B</option><option>C</option><option>D</option></select></div><div><label>Marks</label><input id="qMarks" type="number" min="0.01" value="1"></div></div>
+      <label>Explanation (optional)</label><textarea id="qExplanation" placeholder="Explain why the answer is correct"></textarea>
+      <div class="actions"><button onclick="saveQuestion()">Save question</button></div>
+      <h2 style="margin-top:30px">Bulk import questions</h2><p class="muted">Paste a JSON array. Each item needs exam_type, subject, question_text, option_a, option_b, option_c, option_d and correct_option. Optional: year, topic, explanation, marks.</p>
+      <textarea id="bulkJson" placeholder='[{"exam_type":"WAEC","subject":"Mathematics","question_text":"What is 2 + 2?","option_a":"3","option_b":"4","option_c":"5","option_d":"6","correct_option":"B","explanation":"2 + 2 = 4."}]'></textarea>
+      <div class="actions"><button onclick="bulkImport()">Import questions</button><button class="secondary" onclick="refreshAdmin()">Refresh question bank</button><button class="danger" onclick="adminLogout()">Lock admin</button></div>
+      <div id="adminMsg" class="notice hidden"></div><div id="questionTable" class="tablewrap" style="margin-top:18px"></div>
+    </div>
+  </section>
+</main>
+<div class="footer">VICORA Public Practice · Free examination preparation</div>
+<script>
+  var sessionToken = sessionStorage.getItem('vp_session') || '';
+  var currentUser = null, catalog = {}, currentAttempt = null, currentQuestions = [], adminKey = sessionStorage.getItem('vp_admin') || '';
+  function el(id){return document.getElementById(id)}
+  function show(id){['authView','dashboard','examView','resultView','adminView'].forEach(function(x){el(x).classList.add('hidden')});el(id).classList.remove('hidden');el('logoutBtn').classList.toggle('hidden',!sessionToken)}
+  function message(id,text,type){var n=el(id);n.textContent=text;n.className='notice '+(type||'');n.classList.remove('hidden')}
+  function clearMessage(id){el(id).classList.add('hidden')}
+  function call(name,payload,success,error){var runner=google.script.run.withSuccessHandler(success).withFailureHandler(function(e){if(error)error(e);else alert(e&&e.message?e.message:String(e))});runner[name](payload||{})}
+  function showAuth(mode){el('loginForm').classList.toggle('hidden',mode!=='login');el('registerForm').classList.toggle('hidden',mode!=='register');el('loginTab').classList.toggle('active',mode==='login');el('registerTab').classList.toggle('active',mode==='register');clearMessage('authMsg')}
+  function backAuth(){show('authView');showAuth('login')}
+  function register(){var p={fullName:el('regName').value,email:el('regEmail').value,password:el('regPassword').value};if(!p.fullName||!p.email||p.password.length<10){message('authMsg','Enter your name, a valid email and a password of at least 10 characters.','error');return}call('uiRegister',p,function(r){saveSession(r);message('authMsg','Account created. Welcome to VICORA.','success');openDashboard()},function(e){message('authMsg',e.message||String(e),'error')})}
+  function login(){var p={email:el('loginEmail').value,password:el('loginPassword').value};call('uiLogin',p,function(r){saveSession(r);openDashboard()},function(e){message('authMsg',e.message||String(e),'error')})}
+  function saveSession(r){sessionToken=r.sessionToken;currentUser=r.user;sessionStorage.setItem('vp_session',sessionToken)}
+  function openDashboard(){show('dashboard');el('welcome').textContent='Welcome, '+(currentUser?currentUser.fullName:'Student');loadCatalog();loadHistory()}
+  function logout(){call('uiLogout',{sessionToken:sessionToken},function(){sessionStorage.removeItem('vp_session');sessionToken='';currentUser=null;backAuth()},function(){sessionStorage.removeItem('vp_session');sessionToken='';backAuth()})}
+  function loadCatalog(){call('uiCatalog',{},function(r){catalog=r;var count=0;Object.keys(r.subjects||{}).forEach(function(k){count+=r.subjects[k].length});el('statSubjects').textContent=count;loadSubjects()},function(e){message('authMsg',e.message||String(e),'error')})}
+  function loadSubjects(){var type=el('examType').value,select=el('subject');select.innerHTML='<option value="">Select subject</option>';((catalog.subjects||{})[type]||[]).forEach(function(s){var o=document.createElement('option');o.value=s;o.textContent=s;select.appendChild(o)})}
+  function loadHistory(){if(!sessionToken)return;call('uiHistory',{sessionToken:sessionToken},function(r){var a=r.attempts||[],done=a.filter(function(x){return x.status==='submitted'}),avg=done.length?done.reduce(function(t,x){return t+Number(x.percent||0)},0)/done.length:0;el('statAttempts').textContent=done.length;el('statAverage').textContent=done.length?avg.toFixed(1)+'%':'—';if(!a.length){el('historyList').textContent='No practice sessions yet.';return}var html='<div class="tablewrap"><table><thead><tr><th>Exam</th><th>Subject</th><th>Score</th><th>Status</th></tr></thead><tbody>';a.forEach(function(x){html+='<tr><td>'+esc(x.exam_type)+'</td><td>'+esc(x.subject)+'</td><td>'+ (x.status==='submitted'?Number(x.percent).toFixed(1)+'%':'—')+'</td><td>'+esc(x.status)+'</td></tr>'});el('historyList').innerHTML=html+'</tbody></table></div>'},function(e){if((e.message||'').toLowerCase().indexOf('session')>=0)logout();else console.warn(e)})}
+  function startPractice(){var type=el('examType').value,subject=el('subject').value;if(!type||!subject){alert('Choose an examination and subject.');return}call('uiStart',{sessionToken:sessionToken,examType:type,subject:subject,questionCount:Number(el('questionCount').value)},function(r){currentAttempt=r.attemptId;currentQuestions=r.questions||[];el('examMeta').textContent=r.examType+' · '+r.subject+' · '+r.questionCount+' QUESTIONS';el('examHeading').textContent=r.subject+' practice';renderQuestions();show('examView')},function(e){alert(e.message||String(e))})}
+  function renderQuestions(){var html='';currentQuestions.forEach(function(q,i){html+='<div class="question"><div class="qnum">QUESTION '+(i+1)+'</div><h3>'+esc(q.questionText)+'</h3>';['A','B','C','D'].forEach(function(k){html+='<label class="option"><input type="radio" name="q_'+q.id+'" value="'+k+'"><span><b>'+k+'.</b> '+esc(q.options[k]||'')+'</span></label>'});html+='</div>'});el('questions').innerHTML=html}
+  function submitPractice(){if(!confirm('Submit this practice session and reveal your answers?'))return;var answers={};currentQuestions.forEach(function(q){var a=document.querySelector('input[name="q_'+q.id+'"]:checked');answers[q.id]=a?a.value:''});call('uiSubmit',{sessionToken:sessionToken,attemptId:currentAttempt,answers:answers},function(r){renderResult(r);show('resultView');loadHistory()},function(e){message('examMsg',e.message||String(e),'error')})}
+  function renderResult(r){var pct=Number(r.percentage||0);el('resultSummary').innerHTML='<div class="statrow"><div class="stat"><span class="muted">Score</span><strong>'+Number(r.score).toFixed(1)+' / '+Number(r.total).toFixed(1)+'</strong></div><div class="stat"><span class="muted">Percentage</span><strong>'+pct.toFixed(1)+'%</strong></div><div class="stat"><span class="muted">Correct answers</span><strong>'+r.correctCount+' / '+r.questionCount+'</strong></div></div><div class="bar"><i style="width:'+Math.max(0,Math.min(100,pct))+'%"></i></div>';
+    var html='';(r.review||[]).forEach(function(q,i){html+='<div class="question"><div class="qnum">QUESTION '+(i+1)+'</div><h3>'+esc(q.questionText)+'</h3>';['A','B','C','D'].forEach(function(k){var cls=k===q.correctOption?'result-good':(k===q.selectedOption&&!q.correct?'result-bad':'');html+='<p class="'+cls+'">'+k+'. '+esc(q.options[k]||'')+(k===q.correctOption?' ✓ Correct answer':'')+(k===q.selectedOption?' · Your answer':'')+'</p>'});if(q.explanation)html+='<p class="muted"><b>Explanation:</b> '+esc(q.explanation)+'</p>';html+='</div>'});el('reviewList').innerHTML=html}
+  function backDashboard(){if(sessionToken)openDashboard();else backAuth()}
+  function showAdmin(){show('adminView');el('adminLogin').classList.remove('hidden');el('adminTools').classList.add('hidden');if(adminKey){el('adminKey').value=adminKey;adminLogin()}}
+  function adminLogin(){var k=el('adminKey').value;if(!k){alert('Enter the administrator key.');return}adminKey=k;sessionStorage.setItem('vp_admin',k);el('adminLogin').classList.add('hidden');el('adminTools').classList.remove('hidden');refreshAdmin()}
+  function adminLogout(){adminKey='';sessionStorage.removeItem('vp_admin');el('adminKey').value='';el('adminTools').classList.add('hidden');el('adminLogin').classList.remove('hidden')}
+  function refreshAdmin(){call('uiAdminListQuestions',{adminKey:adminKey},function(r){var qs=r.questions||[];el('adminCount').textContent=qs.length;var html='<table><thead><tr><th>Exam</th><th>Subject</th><th>Question</th><th>Answer</th></tr></thead><tbody>';qs.slice(0,100).forEach(function(q){html+='<tr><td>'+esc(q.exam_type)+'</td><td>'+esc(q.subject)+'</td><td>'+esc(q.question_text)+'</td><td>'+esc(q.correct_option)+'</td></tr>'});el('questionTable').innerHTML=html+'</tbody></table>'},function(e){message('adminMsg',e.message||String(e),'error');adminLogout()})}
+  function saveQuestion(){var q={exam_type:el('qType').value,subject:el('qSubject').value,year:el('qYear').value,topic:el('qTopic').value,question_text:el('qText').value,option_a:el('qA').value,option_b:el('qB').value,option_c:el('qC').value,option_d:el('qD').value,correct_option:el('qCorrect').value,marks:el('qMarks').value,explanation:el('qExplanation').value};call('uiAdminImportQuestions',{adminKey:adminKey,questions:[q]},function(r){message('adminMsg','Question saved successfully.','success');['qSubject','qYear','qTopic','qText','qA','qB','qC','qD','qExplanation'].forEach(function(id){el(id).value=''});refreshAdmin()},function(e){message('adminMsg',e.message||String(e),'error')})}
+  function bulkImport(){try{var qs=JSON.parse(el('bulkJson').value);if(!Array.isArray(qs)||!qs.length)throw new Error('Paste a JSON array containing questions.');var batches=[];for(var i=0;i<qs.length;i+=100)batches.push(qs.slice(i,i+100));importBatch(batches,0,0)}catch(e){message('adminMsg',e.message,'error')}}
+  function importBatch(batches,index,total){if(index>=batches.length){message('adminMsg',total+' questions imported successfully.','success');el('bulkJson').value='';refreshAdmin();return}call('uiAdminImportQuestions',{adminKey:adminKey,questions:batches[index]},function(r){importBatch(batches,index+1,total+Number(r.saved||0))},function(e){message('adminMsg','Import stopped: '+(e.message||String(e)),'error')})}
+  function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  if(sessionToken){call('uiMe',{sessionToken:sessionToken},function(r){currentUser=r.user;openDashboard()},function(){sessionStorage.removeItem('vp_session');sessionToken='';backAuth()})}else{backAuth()}
+</script>
+</body>
+</html>
