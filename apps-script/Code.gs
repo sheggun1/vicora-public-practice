@@ -338,7 +338,7 @@ function saveProctorCapture_(b) {
   }
   if (Date.now() >= attemptDeadline_(attempt)) throw new Error('The examination time has expired.');
   const dataUrl = String(b.dataUrl || '');
-  const match = dataUrl.match(/^data:image\\/(jpeg|jpg|png);base64,([A-Za-z0-9+/=]+)$/i);
+  const match = dataUrl.match(/^data:image\/(jpeg|jpg|png);base64,([A-Za-z0-9+/=]+)$/i);
   if (!match || match[2].length > 180000) throw new Error('Invalid camera image. Please retry with a smaller image.');
   const props = PropertiesService.getScriptProperties();
   let folderId = props.getProperty('VICORA_PRACTICE_PROCTOR_FOLDER_ID');
@@ -350,6 +350,14 @@ function saveProctorCapture_(b) {
   if (!folder) {
     folder = DriveApp.createFolder('VICORA Private Proctor Captures');
     props.setProperty('VICORA_PRACTICE_PROCTOR_FOLDER_ID', folder.getId());
+  }
+  // Create the capture index tab on first use; no setup rerun is needed.
+  const ss = db_();
+  let captureSheet = ss.getSheetByName('PracticeProctorCaptures');
+  if (!captureSheet) {
+    captureSheet = ss.insertSheet('PracticeProctorCaptures');
+    captureSheet.getRange(1,1,1,5).setValues([['capture_id','attempt_id','user_id','drive_file_id','captured_at']]);
+    captureSheet.setFrozenRows(1);
   }
   const now = new Date();
   const captureId = Utilities.getUuid();
