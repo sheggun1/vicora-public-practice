@@ -112,6 +112,7 @@ function doPost(e) {
       case 'practice.logout': data = logout_(body); break;
       case 'practice.me': data = me_(body); break;
       case 'practice.catalog': data = catalog_(); break;
+      case 'practice.branding': data = getBranding_(); break;
       case 'practice.history': data = history_(body); break;
       case 'practice.history.detail': data = historyDetail_(body); break;
       case 'practice.start': data = start_(body); break;
@@ -124,6 +125,7 @@ function doPost(e) {
       case 'practice.admin.uploadImage': requireAdmin_(body); data = uploadQuestionImage_(body); break;
       case 'practice.admin.verifyQuestion': requireAdmin_(body); data = verifyQuestionWithAI_(body); break;
       case 'practice.admin.aiSettings': requireAdmin_(body); data = aiSettings_(); break;
+      case 'practice.admin.saveBranding': requireAdmin_(body); data = saveBranding_(body); break;
       case 'practice.admin.saveAiSettings': requireAdmin_(body); data = saveAiSettings_(body); break;
       case 'practice.admin.chatAI': requireAdmin_(body); data = adminAIChat_(body); break;
       case 'practice.ai.tutor': data = studentTutor_(body); break;
@@ -552,6 +554,17 @@ function uploadQuestionImage_(b) {
 }
 const AI_PROVIDERS_=['gemini','groq','openrouter','mistral','cloudflare','nvidia','cohere','sambanova','openai','meta','claude','grok'];
 const AI_DEFAULT_MODELS_={gemini:'gemini-3.5-flash-lite',groq:'openai/gpt-oss-120b',openrouter:'meta-llama/llama-3.3-70b-instruct:free',mistral:'mistral-small-latest',cloudflare:'@cf/meta/llama-3.3-70b-instruct-fp8-fast',nvidia:'meta/llama-3.3-70b-instruct',cohere:'command-r7b-12-2024',sambanova:'Meta-Llama-3.3-70B-Instruct',openai:'gpt-4.1-mini',meta:'muse-spark-1.3',claude:'claude-sonnet-4-5',grok:'grok-4.7'};
+
+function getBranding_() {
+  const theme=String(PropertiesService.getScriptProperties().getProperty('VICORA_PUBLIC_THEME')||'signature').toLowerCase();
+  return {theme:['signature','aurora','emerald','slate','midnight'].indexOf(theme)>=0?theme:'signature'};
+}
+function saveBranding_(b) {
+  const theme=String(b.theme||'').toLowerCase();
+  if(['signature','aurora','emerald','slate','midnight'].indexOf(theme)<0) throw new Error('Choose one of the five VICORA website templates.');
+  PropertiesService.getScriptProperties().setProperty('VICORA_PUBLIC_THEME',theme);
+  return {saved:true,theme:theme};
+}
 function aiSettings_(){const p=PropertiesService.getScriptProperties(),providers={};AI_PROVIDERS_.forEach(k=>{providers[k]={configured:!!p.getProperty('VICORA_'+k.toUpperCase()+'_API_KEY'),model:p.getProperty('VICORA_'+k.toUpperCase()+'_MODEL')||AI_DEFAULT_MODELS_[k]};});providers.cloudflare.accountId=p.getProperty('VICORA_CLOUDFLARE_ACCOUNT_ID')||'';const defaultOrder='gemini,groq,openrouter,mistral,cloudflare,nvidia,cohere,sambanova,openai,meta,claude,grok';let saved=p.getProperty('VICORA_AI_PROVIDER_ORDER')||'';let order=saved.split(',').map(x=>x.trim()).filter(x=>AI_PROVIDERS_.indexOf(x)>=0);if(!saved||order.length===6&&order.indexOf('openrouter')<0){order=defaultOrder.split(',');}else{AI_PROVIDERS_.forEach(k=>{if(order.indexOf(k)<0)order.push(k);});}const normalized=order.join(',');if(normalized!==saved)p.setProperty('VICORA_AI_PROVIDER_ORDER',normalized);return {providers:providers,providerOrder:normalized};}
 function saveAiSettings_(b){const p=PropertiesService.getScriptProperties();AI_PROVIDERS_.forEach(k=>{const prefix='VICORA_'+k.toUpperCase();const key=b[k+'Key'];if(key&&String(key).trim())p.setProperty(prefix+'_API_KEY',String(key).trim());if(b[k+'Model']!==undefined)p.setProperty(prefix+'_MODEL',validModelId_(b[k+'Model'],k+' model'));});if(b.cloudflareAccountId!==undefined&&String(b.cloudflareAccountId).trim())p.setProperty('VICORA_CLOUDFLARE_ACCOUNT_ID',String(b.cloudflareAccountId).trim());if(b.providerOrder!==undefined){const order=String(b.providerOrder).toLowerCase().split(',').map(x=>x.trim()).filter(Boolean);if(order.length!==AI_PROVIDERS_.length||new Set(order).size!==AI_PROVIDERS_.length||order.some(x=>AI_PROVIDERS_.indexOf(x)<0))throw Error('Fallback order must contain each provider exactly once: '+AI_PROVIDERS_.join(', ')+'.');p.setProperty('VICORA_AI_PROVIDER_ORDER',order.join(','));}return aiSettings_();}
 function validModelId_(value,label){const id=String(value||'').trim();if(!id||id.length>120||!/^[A-Za-z0-9@._:/-]+$/.test(id))throw Error('Enter a valid '+label+' model ID.');return id;}
