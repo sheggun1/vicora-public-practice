@@ -15,7 +15,7 @@
  */
 
 const VP = Object.freeze({
-  VERSION: '1.3.0',
+  VERSION: '1.4.0',
   DB_PROP: 'VICORA_PRACTICE_DATABASE_ID',
   ADMIN_PROP: 'VICORA_PRACTICE_ADMIN_KEY',
   SESSION_MS: 365 * 24 * 60 * 60 * 1000,
