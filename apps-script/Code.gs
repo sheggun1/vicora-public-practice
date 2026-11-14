@@ -457,7 +457,7 @@ function requestPasswordReset_(b){
  if(u&&u.active==='true'){
   const token=randomToken_(),now=new Date(),expires=new Date(now.getTime()+30*60*1000);
   append_('PracticePasswordResets',{reset_id:Utilities.getUuid(),user_id:u.user_id,token_hash:hash_(token),expires_at:expires.toISOString(),used:'false',created_at:now.toISOString()});
-  const base=String(b.siteUrl||'').replace(/\/$/,'');if(!/^https:\/\/[a-z0-9.-]+$/i.test(base))throw Error('Password reset site address is invalid.');
+  const base='https://vicora-practice-new.vercel.app';
   MailApp.sendEmail({to:u.email,subject:'VICORA Practice password reset',body:'Hello '+u.full_name+',\n\nUse this link to reset your VICORA Practice password. It expires in 30 minutes and can only be used once:\n\n'+base+'/?reset='+encodeURIComponent(token)+'\n\nIf you did not request this, ignore this email.'});
  }
  return {message:'If the email belongs to an active account, a password reset link has been sent.'};
