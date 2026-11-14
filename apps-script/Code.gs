@@ -297,6 +297,7 @@ function start_(b) {
   const classLevel = requestedClass === 'ALL' ? 'ALL' : normalClass_(schoolLevel,requestedClass);
   const examMode = String(b.examMode || 'standard').toLowerCase() === 'proctored' ? 'proctored' : 'standard';
   const proctorEnabled = examMode === 'proctored' && b.proctorEnabled !== false;
+  if (proctorEnabled && b.cameraConsent !== true) throw new Error('Camera monitoring requires explicit consent. Choose Camera OFF to continue without it.');
   const subject = required_(b.subject, 'Subject', 100);
   const count = Math.max(5, Math.min(60, Number(b.questionCount) || 20));
   const durationMinutes = Number(b.durationMinutes);
@@ -318,7 +319,9 @@ function start_(b) {
   const attemptId = Utilities.getUuid();
   const now = new Date().toISOString();
   const deadlineAt = new Date(Date.now() + durationMinutes * 60000).toISOString();
+  ensureColumns_('PracticeAttempts',['camera_consent','camera_consent_at','camera_consent_version']);
   append_('PracticeAttempts', {
+    camera_consent:String(proctorEnabled), camera_consent_at:proctorEnabled?clean_(b.cameraConsentAt,40):'', camera_consent_version:proctorEnabled?clean_(b.cameraConsentVersion,60):'',
     attempt_id:attemptId, user_id:user.user_id, exam_type:type, school_level:schoolLevel, class_level:classLevel, subject:subject,
     exam_mode:examMode, proctor_enabled:String(proctorEnabled), proctor_events_json:'[]',
     question_ids_json:JSON.stringify(ids), question_count:ids.length,
@@ -337,7 +340,6 @@ function saveProctorCapture_(b) {
     throw new Error('Camera captures are accepted only during an active proctored examination.');
   }
   if (Date.now() >= attemptDeadline_(attempt)) throw new Error('The examination time has expired.');
-  ensureProctorCleanupTrigger_();
   cleanupExpiredProctorCaptures_();
   const dataUrl = String(b.dataUrl || '');
   const match = dataUrl.match(/^data:image\/(jpeg|jpg|png);base64,([A-Za-z0-9+/=]+)$/i);
@@ -377,6 +379,20 @@ function saveProctorCapture_(b) {
 function ensureProctorCleanupTrigger_() {
   const exists = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'cleanupExpiredProctorCaptures_');
   if (!exists) ScriptApp.newTrigger('cleanupExpiredProctorCaptures_').timeBased().everyMinutes(5).create();
+}
+
+function ensureColumns_(sheetName, columns) {
+  const sh = db_().getSheetByName(sheetName);
+  if (!sh) throw new Error('Database tab missing: ' + sheetName);
+  const existing = sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getValues()[0].map(String);
+  columns.forEach(function(name){ if(existing.indexOf(name)<0) sh.getRange(1,sh.getLastColumn()+1).setValue(name); });
+}
+
+function installVICORAProctorCleanup() {
+  const exists=ScriptApp.getProjectTriggers().some(t=>t.getHandlerFunction()==='cleanupExpiredProctorCaptures_');
+  if(!exists) ScriptApp.newTrigger('cleanupExpiredProctorCaptures_').timeBased().everyMinutes(5).create();
+  cleanupExpiredProctorCaptures_();
+  return 'VICORA camera-image cleanup is installed. Images older than one hour are deleted automatically.';
 }
 
 function cleanupExpiredProctorCaptures_() {
