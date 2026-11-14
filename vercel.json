@@ -1,15 +1,55 @@
 {
- "$schema":"https://openapi.vercel.sh/vercel.json",
- "framework":null,
- "buildCommand":null,
- "headers":[
-  {"source":"/api/(.*)","headers":[{"key":"Cache-Control","value":"no-store"},{"key":"X-Content-Type-Options","value":"nosniff"}]},
-  {"source":"/(.*)","headers":[{"key":"X-Content-Type-Options","value":"nosniff"},{"key":"Referrer-Policy","value":"strict-origin-when-cross-origin"}]}
- ],
- "rewrites":[
-  {"source":"/practice","destination":"/practice/index.html"},
-  {"source":"/practice/","destination":"/practice/index.html"},
-  {"source":"/practice/admin","destination":"/practice/admin/index.html"},
-  {"source":"/practice/admin/","destination":"/practice/admin/index.html"}
- ]
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": null,
+  "buildCommand": null,
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        }
+      ]
+    },
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        }
+      ]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/practice",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/practice/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/practice/admin",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/practice/admin/",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/practice/register.html",
+      "destination": "/index.html"
+    }
+  ]
 }
