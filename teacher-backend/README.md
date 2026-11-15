@@ -50,7 +50,7 @@ Supported provider IDs: `gemini, groq, openrouter, mistral, cloudflare, nvidia, 
 - Platform Admin school listing and AI provider settings.
 
 ## Current implementation notes
-- Uploaded files are capped at 6 MB.
+- Uploaded files are capped at 3 MB.
 - The first document editor stores content in Google Sheets; keep generated document HTML/text below the Apps Script cell-size limit.
 - PDF output uses the browser print dialog; choose Save as PDF.
 - DOCX export depends on the external html-docx-js library loading successfully.
