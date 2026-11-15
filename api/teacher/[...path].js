@@ -10,6 +10,7 @@ module.exports=async function handler(req,res){
   "POST /logout":"teacher.logout",
   "GET /me":"teacher.me",
   "POST /documents/generate":"teacher.documents.generate",
+  "POST /documents/save":"teacher.documents.save",
   "GET /documents":"teacher.documents.list",
   "GET /resources":"teacher.resources.list",
   "POST /resources/upload":"teacher.resources.upload",
@@ -29,6 +30,7 @@ module.exports=async function handler(req,res){
  if(action==="teacher.admin.login")payload.adminKey=input.admin_key;
  if(action==="teacher.documents.generate")Object.assign(payload,{docType:input.doc_type,level:input.level,classLevel:input.class_level,subject:input.subject,term:input.term,week:input.week,topic:input.topic,subtopic:input.subtopic,duration:input.duration,questionCount:input.question_count,difficulty:input.difficulty,instructions:input.instructions,referenceIds:input.reference_ids||[]});
  if(action==="teacher.documents.get")payload.documentId=decodeURIComponent(detail[2]);
+ if(action==="teacher.documents.save")Object.assign(payload,{documentId:input.document_id,contentHtml:input.content_html,contentText:input.content_text});
  if(action==="teacher.resources.get")payload.resourceId=decodeURIComponent(detail[2]);
  if(action==="teacher.resources.upload")Object.assign(payload,{fileName:input.file_name,mimeType:input.mime_type,fileBase64:input.file_base64,extractedText:input.extracted_text,description:input.description,targetSchoolId:input.target_school_id,visibility:input.visibility});
  if(action==="teacher.ai.chat")Object.assign(payload,{messages:input.messages||[],question:input.question,resourceIds:input.resource_ids||[]});
