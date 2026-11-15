@@ -28,7 +28,7 @@ module.exports=async function handler(req,res){
  if(action==="teacher.register")Object.assign(payload,{fullName:input.full_name,email:input.email,password:input.password,schoolName:input.school_name,schoolState:input.school_state,schoolType:input.school_type,joinCode:input.join_code});
  if(action==="teacher.login")Object.assign(payload,{email:input.email,password:input.password});
  if(action==="teacher.admin.login")payload.adminKey=input.admin_key;
- if(action==="teacher.documents.generate")Object.assign(payload,{docType:input.doc_type,level:input.level,classLevel:input.class_level,subject:input.subject,term:input.term,week:input.week,topic:input.topic,subtopic:input.subtopic,duration:input.duration,questionCount:input.question_count,difficulty:input.difficulty,instructions:input.instructions,referenceIds:input.reference_ids||[]});
+ if(action==="teacher.documents.generate")Object.assign(payload,{docType:input.doc_type,level:input.level,classLevel:input.class_level,subject:input.subject,term:input.term,week:input.week,topic:input.topic,subtopic:input.subtopic,duration:input.duration,questionCount:input.question_count,difficulty:input.difficulty,examFormat:input.exam_format,instructions:input.instructions,referenceIds:input.reference_ids||[]});
  if(action==="teacher.documents.get")payload.documentId=decodeURIComponent(detail[2]);
  if(action==="teacher.documents.save")Object.assign(payload,{documentId:input.document_id,contentHtml:input.content_html,contentText:input.content_text});
  if(action==="teacher.resources.get")payload.resourceId=decodeURIComponent(detail[2]);
