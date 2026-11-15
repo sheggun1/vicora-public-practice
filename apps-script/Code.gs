@@ -122,6 +122,7 @@ function doPost(e) {
       case 'practice.submit': data = submit_(body); break;
       case 'practice.admin.listQuestions': requireAdmin_(body); data = listQuestions_(); break;
       case 'practice.admin.importQuestions': requireAdmin_(body); data = importQuestions_(body); break;
+      case 'practice.admin.deleteQuestions': requireAdmin_(body); data = deleteQuestions_(body); break;
       case 'practice.admin.listUsers': requireAdmin_(body); data = listUsers_(); break;
       case 'practice.admin.setUserStatus': requireAdmin_(body); data = setUserStatus_(body); break;
       case 'practice.admin.uploadImage': requireAdmin_(body); data = uploadQuestionImage_(body); break;
@@ -633,6 +634,19 @@ function importQuestions_(b) {
   }
 }
 
+function deleteQuestions_(b) {
+  const ids=Array.isArray(b.questionIds)?b.questionIds.map(String).filter(Boolean):[];
+  if(!ids.length||ids.length>500)throw new Error('Select between 1 and 500 questions to delete.');
+  const wanted=new Set(ids),sh=sheet_('PracticeQuestions'),values=sh.getDataRange().getValues();
+  if(values.length<2)return {deleted:0};
+  const headers=values[0].map(String),col=headers.indexOf('question_id');
+  if(col<0)throw new Error('Question ID column is missing.');
+  const keep=[values[0]];let count=0;
+  for(let i=1;i<values.length;i++){if(wanted.has(String(values[i][col])))count++;else keep.push(values[i]);}
+  if(count){sh.clearContents();sh.getRange(1,1,keep.length,headers.length).setValues(keep);}
+  return {deleted:count};
+}
+
 function listUsers_() {
   const attempts=read_('PracticeAttempts'),rows=read_('PracticeUsers').sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
   return {users:rows.map(u=>{const own=attempts.filter(a=>a.user_id===u.user_id);return {user_id:u.user_id,full_name:u.full_name,email:u.email,active:u.active==='true',created_at:u.created_at,last_login:u.last_login,school_level:u.school_level||'SENIOR_SECONDARY',class_level:u.class_level||'SS 1',attempts:own.length,completed:own.filter(a=>a.status==='submitted').length};})};
@@ -672,8 +686,8 @@ function aiSettings_(){const p=PropertiesService.getScriptProperties(),providers
 function saveAiSettings_(b){const p=PropertiesService.getScriptProperties();AI_PROVIDERS_.forEach(k=>{const prefix='VICORA_'+k.toUpperCase();const key=b[k+'Key'];if(key&&String(key).trim())p.setProperty(prefix+'_API_KEY',String(key).trim());if(b[k+'Model']!==undefined)p.setProperty(prefix+'_MODEL',validModelId_(b[k+'Model'],k+' model'));});if(b.cloudflareAccountId!==undefined&&String(b.cloudflareAccountId).trim())p.setProperty('VICORA_CLOUDFLARE_ACCOUNT_ID',String(b.cloudflareAccountId).trim());if(b.providerOrder!==undefined){const order=String(b.providerOrder).toLowerCase().split(',').map(x=>x.trim()).filter(Boolean);if(order.length!==AI_PROVIDERS_.length||new Set(order).size!==AI_PROVIDERS_.length||order.some(x=>AI_PROVIDERS_.indexOf(x)<0))throw Error('Fallback order must contain each provider exactly once: '+AI_PROVIDERS_.join(', ')+'.');p.setProperty('VICORA_AI_PROVIDER_ORDER',order.join(','));}return aiSettings_();}
 function validModelId_(value,label){const id=String(value||'').trim();if(!id||id.length>120||!/^[A-Za-z0-9@._:/-]+$/.test(id))throw Error('Enter a valid '+label+' model ID.');return id;}
 function verifyQuestionWithAI_(b){const q=b.question||{};const prompt='Review this Nigerian curriculum question for the stated school level and class. Check factual accuracy, ambiguity, all options, proposed correct answer, explanation and image relevance. Do not assume supplied answer is correct. Return a concise structured report with verdict PASS/REVIEW/FAIL, answerCheck, issues, suggestedCorrection, explanationCheck and levelFit. Question: '+JSON.stringify(q);return callPracticeAI_(prompt,q.image_url||'',true);}
-function studentTutor_(b){const u=auth_(b);if(read_('PracticeAttempts').some(a=>a.user_id===u.user_id&&a.status==='in_progress'))throw Error('AI Study is locked while you have an active examination. Submit your examination before asking AI for help.');const messages=cleanChatMessages_(b.messages,b.question);if(!messages.length)throw Error('Enter a learning question.');const prompt='You are VICORA AI Study Tutor. Teach a student in '+(u.school_level||'SENIOR_SECONDARY')+', class '+(u.class_level||'SS 1')+'. Support Primary, Junior Secondary and Senior Secondary learning with age-appropriate, curriculum-aligned explanations. Teach step by step, use simple examples, check understanding, and never shame the learner. If asked to solve a problem, show the method and final answer. Keep answers clear and useful. The student is studying independently, not taking an active examination. Conversation:\\n'+formatChatMessages_(messages);return callPracticeAI_(prompt,String(b.image_url||''),false);}
-function adminAIChat_(b){const messages=cleanChatMessages_(b.messages,b.question);if(!messages.length)throw Error('Enter a message for VICORA Admin AI.');const prompt='You are VICORA Admin AI, an assistant for the authorised administrator of VICORA Public CBT Practice. Help with question-bank planning, Nigerian curriculum alignment, question generation, answer verification, explanations, test preparation, platform operations and interpreting any figures the administrator explicitly provides. Be precise, flag uncertainty, and never claim to have changed database records or settings. When generating questions, include school level, class, subject, topic, four options A-D, correct answer and explanation. Conversation:\\n'+formatChatMessages_(messages);return callPracticeAI_(prompt,'',true);}
+function studentTutor_(b){const u=auth_(b);if(read_('PracticeAttempts').some(a=>a.user_id===u.user_id&&a.status==='in_progress'))throw Error('AI Study is locked while you have an active examination. Submit your examination before asking AI for help.');const messages=cleanChatMessages_(b.messages,b.question);if(!messages.length)throw Error('Enter a learning question.');const prompt='You are VICORA AI Study Tutor. Teach a student in '+(u.school_level||'SENIOR_SECONDARY')+', class '+(u.class_level||'SS 1')+'. Support Primary, Junior Secondary and Senior Secondary learning with age-appropriate, curriculum-aligned explanations. Teach step by step, use simple examples, check understanding, and never shame the learner. If asked to solve a problem, show the method and final answer. Format every response in clean Markdown with a descriptive title, clear headings, short paragraphs, numbered steps, bullet lists, bold key terms, and readable tables or equations where useful. Avoid dense walls of text. The student is studying independently, not taking an active examination. Conversation:\\n'+formatChatMessages_(messages);return callPracticeAI_(prompt,String(b.image_url||''),false);}
+function adminAIChat_(b){const messages=cleanChatMessages_(b.messages,b.question);if(!messages.length)throw Error('Enter a message for VICORA Admin AI.');const prompt='You are VICORA Admin AI, an assistant for the authorised administrator of VICORA Public CBT Practice. Help with question-bank planning, Nigerian curriculum alignment, question generation, answer verification, explanations, test preparation, platform operations and interpreting any figures the administrator explicitly provides. Be precise, flag uncertainty, and never claim to have changed database records or settings. When generating questions, include school level, class, subject, topic, four options A-D, correct answer and explanation. Format all output as a polished, print-ready Markdown document with a clear title, structured headings, consistent numbering, readable tables where useful, answer key and explanations. Follow the requested item count exactly where feasible. Conversation:\\n'+formatChatMessages_(messages);return callPracticeAI_(prompt,'',true);}
 function cleanChatMessages_(raw,fallback){let list=Array.isArray(raw)?raw:[];list=list.slice(-12).map(m=>({role:m&&m.role==='assistant'?'assistant':'user',content:clean_(m&&m.content,3000)})).filter(m=>m.content);if(!list.length&&fallback)list=[{role:'user',content:clean_(fallback,3000)}];return list;}
 function formatChatMessages_(messages){return messages.map(m=>(m.role==='assistant'?'VICORA AI':'User')+': '+m.content).join('\\n');}
 function callPracticeAI_(prompt,imageUrl,isAdmin){
@@ -690,12 +704,12 @@ function callPracticeAI_(prompt,imageUrl,isAdmin){
     if(imageUrl){const fid=(String(imageUrl).match(/[?&]id=([^&]+)/)||[])[1];if(fid){const blob=DriveApp.getFileById(fid).getBlob();parts.push({inlineData:{mimeType:blob.getContentType(),data:Utilities.base64Encode(blob.getBytes())}});}else parts.push({text:'Image URL: '+imageUrl});}
     const model=p.getProperty(prefix+'_MODEL')||AI_DEFAULT_MODELS_.gemini;
     const url='https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model)+':generateContent?key='+encodeURIComponent(key);
-    const res=UrlFetchApp.fetch(url,{method:'post',contentType:'application/json',payload:JSON.stringify({contents:[{parts:parts}],generationConfig:{temperature:0.2,maxOutputTokens:1200}}),muteHttpExceptions:true});
+    const res=UrlFetchApp.fetch(url,{method:'post',contentType:'application/json',payload:JSON.stringify({contents:[{parts:parts}],generationConfig:{temperature:0.2,maxOutputTokens:4000}}),muteHttpExceptions:true});
     const data=parseAIJson_(res,provider);if(res.getResponseCode()>=300)throw Error(aiErrorMessage_(data,res,provider));
     answer=(data.candidates&&data.candidates[0]&&data.candidates[0].content&&data.candidates[0].content.parts||[]).map(x=>x.text||'').join('');
    }else if(provider==='claude'){
     const model=p.getProperty(prefix+'_MODEL')||AI_DEFAULT_MODELS_.claude;
-    const res=UrlFetchApp.fetch('https://api.anthropic.com/v1/messages',{method:'post',contentType:'application/json',headers:{'x-api-key':key,'anthropic-version':'2023-06-01'},payload:JSON.stringify({model:model,max_tokens:1200,messages:[{role:'user',content:prompt}]}),muteHttpExceptions:true});
+    const res=UrlFetchApp.fetch('https://api.anthropic.com/v1/messages',{method:'post',contentType:'application/json',headers:{'x-api-key':key,'anthropic-version':'2023-06-01'},payload:JSON.stringify({model:model,max_tokens:4000,messages:[{role:'user',content:prompt}]}),muteHttpExceptions:true});
     const data=parseAIJson_(res,provider);if(res.getResponseCode()>=300)throw Error(aiErrorMessage_(data,res,provider));
     answer=(data.content||[]).map(x=>x.text||'').join('');
    }else if(provider==='cohere'){
